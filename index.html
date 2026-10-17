@@ -35,7 +35,7 @@ button.sec{background:var(--card);color:var(--txt);border:1px solid var(--line);
 .chip.bad{border-color:var(--bad);color:var(--bad)}.chip.ok{border-color:var(--ok);color:var(--ok)}
 .st-Charge{color:var(--ok)}.st-Discharge{color:var(--acc)}.st-Standby{color:var(--warn)}.st-Protection{color:var(--bad)}
 #log{font:11px/1.35 ui-monospace,Menlo,monospace;color:var(--mut);white-space:pre-wrap;max-height:160px;overflow:auto;margin-top:10px}
-.stale .val{opacity:.45}
+.stale .val{opacity:.45}.cells.stale{opacity:.45}
 footer{font-size:11px;color:var(--mut);margin-top:12px;text-align:center}
 </style>
 <link rel="apple-touch-icon" href="icon.png"><link rel="icon" href="icon.png"><meta name="apple-mobile-web-app-title" content="Invicta"></head>
@@ -53,8 +53,8 @@ footer{font-size:11px;color:var(--mut);margin-top:12px;text-align:center}
   <div class="tile"><div class="lbl">Pack voltage</div><div class="val" id="vV">–</div><div class="sub" id="vVsub"></div></div>
   <div class="tile"><div class="lbl">Status</div><div class="val" id="vSt">–</div><div class="sub" id="vStSub"></div></div>
   <div class="tile"><div class="lbl">Current (raw, 1 BMS)</div><div class="val" id="vI">–</div><div class="sub">+ charge / − discharge</div></div>
-  <div class="tile"><div class="lbl">MAX total (×2)</div><div class="val" id="vI2">–</div><div class="sub">dual-BMS models</div></div>
-  <div class="tile"><div class="lbl">Power (×2)</div><div class="val" id="vP">–</div><div class="sub" id="vPraw"></div></div>
+  <div class="tile"><div class="lbl">MAX total (×2 est.)</div><div class="val" id="vI2">–</div><div class="sub">estimate; BMS may already be pack-level</div></div>
+  <div class="tile"><div class="lbl">Power (raw)</div><div class="val" id="vP">–</div><div class="sub" id="vPraw"></div></div>
   <div class="tile"><div class="lbl">Temperatures</div><div class="val" id="vT">–</div><div class="sub" id="vTall"></div></div>
   <div class="tile"><div class="lbl">Cycles</div><div class="val" id="vCyc">–</div><div class="sub" id="vSw"></div></div>
   <div class="tile"><div class="lbl">Last update</div><div class="val" id="vUpd" style="font-size:22px">–</div><div class="sub" id="vRate"></div></div>
@@ -67,16 +67,23 @@ footer{font-size:11px;color:var(--mut);margin-top:12px;text-align:center}
 
 <script>
 // ===== PARSER-BEGIN (pure JS, tested in node) =====
-const CMD_BASIC = [0xDD,0xA5,0x03,0x00,0xFF,0xFD,0x77];
-const CMD_CELLS = [0xDD,0xA5,0x04,0x00,0xFF,0xFC,0x77];
-const ALLOWED_HEX = new Set([CMD_BASIC, CMD_CELLS].map(a => toHex(a)));   // HARD WHITELIST
-function toHex(a){return Array.from(a,b=>b.toString(16).padStart(2,'0')).join('');}
+const CMD_BASIC = Object.freeze([0xDD,0xA5,0x03,0x00,0xFF,0xFD,0x77]);
+const CMD_CELLS = Object.freeze([0xDD,0xA5,0x04,0x00,0xFF,0xFC,0x77]);
+const ALLOWED = Object.freeze([CMD_BASIC, CMD_CELLS]);                  // HARD WHITELIST (exact bytes)
+const ALLOWED_HEX = new Set(ALLOWED.map(a => toHex(a)));               // kept for tests/back-compat only
+function toHex(a){return Array.from(a,b=>(b&255).toString(16).padStart(2,'0')).join('');}
+// Compare the exact bytes that will go on the wire (L1). Accepts Uint8Array only.
+function isAllowedBytes(u8){
+  if(Object.prototype.toString.call(u8)!=='[object Uint8Array]') return false;
+  return ALLOWED.some(a=>a.length===u8.length && a.every((b,i)=>b===u8[i]));
+}
 function jbdChecksum(bytes){let s=0;for(const b of bytes)s+=b;return (0x10000-s)&0xFFFF;}
 const u16=(b,i)=>(b[i]<<8)|b[i+1];
 const s16=(b,i)=>{const v=u16(b,i);return v&0x8000?v-0x10000:v;};
 const PROT_BITS={0:'Cell overvoltage',1:'Cell undervoltage',2:'Pack overvoltage',3:'Pack undervoltage (jump-start reserve)',
  4:'Charge over-temp',5:'Charge under-temp',6:'Discharge over-temp',7:'Discharge under-temp',8:'Charge overcurrent',
  9:'Discharge overcurrent',10:'Short circuit',11:'Front-end IC error',12:'MOSFET software lock'};
+const VALID_CMDS=new Set([0x03,0x04,0xAA]), VALID_STATUS=new Set([0x00,0x80]), MAX_LEN=64, MAX_BUF=300;
 class FrameAssembler{
   constructor(){this.buf=[];}
   feed(chunk){
@@ -87,30 +94,52 @@ class FrameAssembler{
       if(st<0){this.buf=[];break;}
       if(st>0)this.buf.splice(0,st);
       if(this.buf.length<4)break;
+      // M1: validate header before waiting for more bytes; resync one byte on any mismatch
+      if(!VALID_CMDS.has(this.buf[1])||!VALID_STATUS.has(this.buf[2])||this.buf[3]>MAX_LEN){this.buf.splice(0,1);continue;}
       const total=this.buf[3]+7;
-      if(this.buf.length<total){ if(this.buf.length>300)this.buf=[]; break;}
-      const f=this.buf.splice(0,total);
-      if(f[total-1]!==0x77)continue;
+      if(this.buf.length<total){ if(this.buf.length>MAX_BUF)this.buf.splice(0,1); else break; continue; }
+      const f=this.buf.slice(0,total);
+      if(f[total-1]!==0x77){this.buf.splice(0,1);continue;}
       const ok=jbdChecksum(f.slice(2,total-3))===u16(f,total-3);
-      out.push({cmd:f[1],status:f[2],payload:f.slice(4,total-3),ok,frame:f});
+      if(!ok){ out.push({cmd:f[1],status:f[2],payload:f.slice(4,total-3),ok:false,frame:f}); this.buf.splice(0,1); continue; }
+      this.buf.splice(0,total);
+      out.push({cmd:f[1],status:f[2],payload:f.slice(4,total-3),ok:true,frame:f});
     }
     return out;
   }
 }
 function parseBasic(p){
+  if(!p||p.length<23) return null;   // full JBD 0x03 payload needed (SOC/FET/NTC live past byte 19)
   const r={voltage:u16(p,0)/100,current:s16(p,2)/100,remainAh:u16(p,4)/100,fullAh:u16(p,6)/100,cycles:u16(p,8),
            prot:0,soc:null,fet:0,cellCount:0,temps:[],sw:'',date:''};
-  if(p.length>=23){
-    const d=u16(p,10); r.date=`${2000+(d>>9)}-${String((d>>5)&15).padStart(2,'0')}-${String(d&31).padStart(2,'0')}`;
-    r.prot=u16(p,16); r.sw=`${p[18]>>4}.${p[18]&15}`; r.soc=p[19]; r.fet=p[20]; r.cellCount=p[21];
-    const n=p[22]; for(let i=0;i<n&&24+2*i<p.length;i++) r.temps.push(Math.round(u16(p,23+2*i)-2731)/10);
-  }
+  const d=u16(p,10); r.date=`${2000+(d>>9)}-${String((d>>5)&15).padStart(2,'0')}-${String(d&31).padStart(2,'0')}`;
+  r.prot=u16(p,16); r.sw=`${p[18]>>4}.${p[18]&15}`; r.soc=p[19]; r.fet=p[20]; r.cellCount=p[21];
+  const n=p[22]; for(let i=0;i<n&&24+2*i<p.length;i++) r.temps.push((u16(p,23+2*i)-2731)/10);
   r.status = (r.prot&8) ? 'Protection' : r.current>0 ? 'Charge' : r.current<0 ? 'Discharge' : 'Standby';
   r.protList = Object.entries(PROT_BITS).filter(([k])=>r.prot&(1<<k)).map(([,v])=>v);
   return r;
 }
 function parseCells(p){const c=[];for(let i=0;i+1<p.length;i+=2)c.push(u16(p,i)/1000);return c;}
-if (typeof module!=='undefined') module.exports={CMD_BASIC,CMD_CELLS,ALLOWED_HEX,toHex,jbdChecksum,FrameAssembler,parseBasic,parseCells};
+// H1: capacity scale k (1 or 2). BMS on SNLHMAX reports full=40 Ah but remaining at pack level (~76 Ah @95%).
+// Only learn k when soc>=10 (ratio is noisy near empty); otherwise keep the saved value (or null = unknown).
+function capScale(remainAh, fullAh, soc, savedK){
+  if(soc!=null && soc>=10 && fullAh>0 && remainAh>0){
+    const kr=remainAh/(soc/100)/fullAh;
+    return kr>=1.5?2:1;
+  }
+  return (savedK===1||savedK===2)?savedK:null;
+}
+function capText(remainAh, fullAh, k){
+  return k ? `${remainAh.toFixed(1)} of ${(fullAh*k).toFixed(0)} Ah remaining`
+           : `${remainAh.toFixed(1)} Ah remaining (capacity scale learning…)`;
+}
+// H2: single decision point for what a reassembled frame may be used for.
+function classifyFrame(f){
+  if(!f||!f.ok) return 'bad-checksum';
+  if(f.status!==0) return 'bms-error';
+  return f.cmd===0x03?'basic':f.cmd===0x04?'cells':'other';
+}
+if (typeof module!=='undefined') module.exports={classifyFrame,CMD_BASIC,CMD_CELLS,ALLOWED,ALLOWED_HEX,toHex,isAllowedBytes,jbdChecksum,FrameAssembler,parseBasic,parseCells,capScale,capText};
 // ===== PARSER-END =====
 </script>
 <script>
@@ -118,35 +147,44 @@ const SETS=[ // [service, notify, write] - FAA0 confirmed on SNLHMAX; FF00 fallb
   ['0000faa0-0000-1000-8000-00805f9b34fb','0000faa1-0000-1000-8000-00805f9b34fb','0000faa2-0000-1000-8000-00805f9b34fb'],
   ['0000ff00-0000-1000-8000-00805f9b34fb','0000ff01-0000-1000-8000-00805f9b34fb','0000ff02-0000-1000-8000-00805f9b34fb'],
 ];
+const WRITE_TIMEOUT_MS=1000, WATCHDOG_MS=6000, CELLS_STALE_MS=10000, BASIC_STALE_MS=5000;
 const $=id=>document.getElementById(id);
-const st={dev:null,notify:null,write:null,asm:new FrameAssembler(),basic:null,cells:[],timer:null,tick:0,
-  wantConnected:false,retry:0,last:0,frames:0,queue:Promise.resolve(),busy:false};
+const st={dev:null,devId:null,notify:null,write:null,asm:new FrameAssembler(),basic:null,cells:[],cellsAt:0,timer:null,tick:0,
+  wantConnected:false,retry:0,last:0,frames:0,writePending:false,loopBusy:false,reTimer:null,connecting:false,connectedAt:0,wl:null,
+  capK:(()=>{try{const v=+localStorage.getItem('invictaCapK');return v===1||v===2?v:null;}catch(e){return null;}})()};
 function log(m){const l=$('log');l.textContent=`${new Date().toLocaleTimeString()} ${m}\n`+l.textContent.slice(0,4000);}
 function setConn(txt,cls){$('connTxt').textContent=txt;$('dot').className='dot '+(cls||'');}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function withTimeout(p,ms,what){let t;return Promise.race([p,new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(what+' timeout')),ms);})]).finally(()=>clearTimeout(t));}
 
+// Returns true if written. Never queues: if a write is still pending the call is skipped (M3).
 async function sendCmd(arr){
-  const hex=toHex(arr);
-  if(!ALLOWED_HEX.has(hex)) throw new Error('BLOCKED non-whitelisted write '+hex);   // hard whitelist
-  if(!st.write) return;
-  st.queue = st.queue.then(async()=>{
-    const data=new Uint8Array(arr);
+  const data=Uint8Array.from(arr);
+  if(!isAllowedBytes(data)) throw new Error('BLOCKED non-whitelisted write '+toHex(data));   // hard whitelist on final bytes
+  if(!st.write||st.writePending) return false;
+  st.writePending=true;
+  try{
     for(let i=0;i<data.length;i+=20){
       const chunk=data.slice(i,i+20);
-      if(st.write.writeValueWithoutResponse) await st.write.writeValueWithoutResponse(chunk);
-      else await st.write.writeValue(chunk);
+      if(!isAllowedBytes(data)) throw new Error('BLOCKED');
+      const p=st.write.writeValueWithoutResponse?st.write.writeValueWithoutResponse(chunk):st.write.writeValue(chunk);
+      await withTimeout(p,WRITE_TIMEOUT_MS,'write');
     }
-    await new Promise(r=>setTimeout(r,150)); // app spaces writes ~200 ms
-  }).catch(e=>log('write err: '+e.message));
-  return st.queue;
+    await sleep(150); // app spaces writes ~200 ms
+    return true;
+  }catch(e){ log('write err: '+e.message); return false; }
+  finally{ st.writePending=false; }
 }
 
 function onNotify(ev){
-  const v=new Uint8Array(ev.target.value.buffer.slice(ev.target.value.byteOffset, ev.target.value.byteOffset+ev.target.value.byteLength));
+  const dv=ev.target.value;
+  const v=new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset+dv.byteLength));
   for(const f of st.asm.feed(v)){
-    if(!f.ok) log(`checksum mismatch cmd 0x${f.cmd.toString(16)}: ${toHex(f.frame)}`);
-    if(f.status!==0){log(`BMS status 0x${f.status.toString(16)} for cmd 0x${f.cmd.toString(16)}`);continue;}
-    if(f.cmd===0x03){st.basic=parseBasic(f.payload);st.last=Date.now();st.frames++;}
-    else if(f.cmd===0x04){st.cells=parseCells(f.payload);}
+    const kind=classifyFrame(f);
+    if(kind==='bad-checksum'){ log(`checksum mismatch cmd 0x${f.cmd.toString(16)}: ${toHex(f.frame)}`); continue; }   // H2: never display
+    if(kind==='bms-error'){ log(`BMS status 0x${f.status.toString(16)} for cmd 0x${f.cmd.toString(16)}`); continue; }
+    if(kind==='basic'){ const b=parseBasic(f.payload); if(!b){log('short 0x03 payload');continue;} st.basic=b; st.last=Date.now(); st.frames++; }
+    else if(kind==='cells'){ st.cells=parseCells(f.payload); st.cellsAt=Date.now(); }
     render();
   }
 }
@@ -156,98 +194,160 @@ function render(){
   const b=st.basic; if(!b) return;
   $('vSoc').innerHTML=(b.soc??'–')+'<small>%</small>';
   const bar=$('socBar'); bar.style.width=(b.soc||0)+'%'; bar.style.background=b.soc<20?'var(--bad)':b.soc<40?'var(--warn)':'var(--ok)';
-  {const full=b.remainAh>b.fullAh*1.02?b.fullAh*2:b.fullAh;$('vAh').textContent=`${b.remainAh.toFixed(1)} of ${full.toFixed(0)} Ah remaining (pack)`;}
+  const k=capScale(b.remainAh,b.fullAh,b.soc,st.capK);
+  if(k&&k!==st.capK){ st.capK=k; try{localStorage.setItem('invictaCapK',String(k));}catch(e){} log('capacity scale k='+k); }
+  $('vAh').textContent=capText(b.remainAh,b.fullAh,k);
   $('vV').innerHTML=b.voltage.toFixed(2)+'<small> V</small>';
   $('vVsub').textContent=b.date?`mfg ${b.date}`:'';
   $('vSt').innerHTML=`<span class="st-${b.status}">${b.status}</span>`;
   $('vStSub').textContent=(b.prot&8)?((b.prot&4096)?'Jump-start released':'Needs jump start (use official app/button)'):'';
   $('vI').innerHTML=fmt(b.current)+'<small> A</small>';
-  $('vI2').innerHTML=fmt(b.current*2)+'<small> A</small>';
-  $('vP').innerHTML=fmt(b.voltage*b.current*2,0)+'<small> W</small>';
-  $('vPraw').textContent=`raw ${fmt(b.voltage*b.current,0)} W`;
+  $('vI2').innerHTML=fmt(b.current*2)+'<small> A est.</small>';
+  $('vP').innerHTML=fmt(b.voltage*b.current,0)+'<small> W</small>';
+  $('vPraw').textContent=`×2 est. ${fmt(b.voltage*b.current*2,0)} W`;
   $('vT').innerHTML=b.temps.length?(Math.max(...b.temps).toFixed(1)+'<small> °C max</small>'):'–';
   $('vTall').textContent=b.temps.map((t,i)=>`T${i+1} ${t.toFixed(1)}°`).join(' · ');
   $('vCyc').textContent=b.cycles; $('vSw').textContent=b.sw?`fw ${b.sw}`:'';
-  const c=st.cells.slice(0,b.cellCount||st.cells.length);
-  if(c.length){
-    const mn=Math.min(...c),mx=Math.max(...c);
-    $('vCellSum').textContent=`min ${mn.toFixed(3)} · max ${mx.toFixed(3)} · Δ ${((mx-mn)*1000).toFixed(0)} mV · Σ ${c.reduce((a,x)=>a+x,0).toFixed(2)} V`;
-    $('cells').innerHTML=c.map((v,i)=>`<div class="cell ${v===mn&&mn!==mx?'min':''} ${v===mx&&mn!==mx?'max':''}"><b>C${i+1}</b>${v.toFixed(3)}</div>`).join('');
-  }
+  renderCells();
   $('fets').innerHTML=`<span class="chip ${b.fet&1?'ok':'bad'}">Charge FET ${b.fet&1?'ON':'OFF'}</span><span class="chip ${b.fet&2?'ok':'bad'}">Discharge FET ${b.fet&2?'ON':'OFF'}</span><span class="chip">raw 0x${b.fet.toString(16).padStart(2,'0')}</span>`;
   $('prot').innerHTML=b.protList.length?b.protList.map(p=>`<span class="chip bad">${p}</span>`).join(''):'<span class="chip ok">None</span>';
   updAge();
+}
+function renderCells(){
+  const b=st.basic;
+  const c=st.cells.slice(0,(b&&b.cellCount)||st.cells.length);
+  if(!c.length){ $('vCellSum').textContent='–'; $('cells').innerHTML=''; return; }
+  const mn=Math.min(...c),mx=Math.max(...c);
+  const age=st.cellsAt?(Date.now()-st.cellsAt)/1000:0;
+  $('vCellSum').textContent=`min ${mn.toFixed(3)} · max ${mx.toFixed(3)} · Δ ${((mx-mn)*1000).toFixed(0)} mV · Σ ${c.reduce((a,x)=>a+x,0).toFixed(2)} V · ${age.toFixed(0)} s ago`;
+  $('cells').innerHTML=c.map((v,i)=>`<div class="cell ${v===mn&&mn!==mx?'min':''} ${v===mx&&mn!==mx?'max':''}"><b>C${i+1}</b>${v.toFixed(3)}</div>`).join('');
+  $('cells').classList.toggle('stale',age*1000>CELLS_STALE_MS);
 }
 function updAge(){
   if(!st.last) return;
   const age=(Date.now()-st.last)/1000;
   $('vUpd').textContent=new Date(st.last).toLocaleTimeString();
   $('vRate').textContent=`${age.toFixed(1)} s ago · ${st.frames} frames`;
-  $('dash').classList.toggle('stale',age>5);
+  $('dash').classList.toggle('stale',age*1000>BASIC_STALE_MS);
+  if(st.cellsAt) renderCells();
 }
-setInterval(updAge,500);
+setInterval(updAge,1000);
+
+function resetData(){ st.basic=null; st.cells=[]; st.cellsAt=0; st.last=0; st.frames=0; }
+async function acquireWakeLock(){ try{ if(navigator.wakeLock&&document.visibilityState==='visible') st.wl=await navigator.wakeLock.request('screen'); }catch(e){} }
 
 async function setup(device){
-  st.dev=device; st.wantConnected=true;
-  device.removeEventListener('gattserverdisconnected',onDisc);
-  device.addEventListener('gattserverdisconnected',onDisc);
-  setConn('Connecting…','wait'); log('connecting '+(device.name||device.id));
-  const server=await device.gatt.connect();
-  let found=null;
-  for(const [s,n,w] of SETS){
-    try{const svc=await server.getPrimaryService(s);found=[svc,n,w,s];break;}catch(e){}
-  }
-  if(!found) throw new Error('No FAA0/FF00 service on device');
-  const [svc,n,w,s]=found;
-  st.notify=await svc.getCharacteristic(n); st.write=await svc.getCharacteristic(w);
-  st.asm=new FrameAssembler();
-  st.notify.addEventListener('characteristicvaluechanged',onNotify);
-  await st.notify.startNotifications();
-  log(`using service 0x${s.toString(16)} notify 0x${n.toString(16)} write 0x${w.toString(16)}`);
-  setConn(device.name||'Connected','on'); st.retry=0;
-  $('btnConnect').hidden=true; $('btnDisconnect').hidden=false; $('btnReconnect').hidden=true;
-  try{localStorage.setItem('invictaDevId',device.id);localStorage.setItem('invictaDevName',device.name||'');}catch(e){}
-  startPolling();
-  try{ if(navigator.wakeLock) st.wl=await navigator.wakeLock.request('screen'); }catch(e){}
+  if(st.connecting) return;
+  st.connecting=true;
+  try{
+    if(st.devId && st.devId!==device.id) resetData();   // L6: don't show old device's data
+    if(st.notify){ try{st.notify.removeEventListener('characteristicvaluechanged',onNotify);}catch(e){} }
+    st.dev=device; st.devId=device.id; st.wantConnected=true;
+    device.removeEventListener('gattserverdisconnected',onDisc);
+    device.addEventListener('gattserverdisconnected',onDisc);
+    setConn('Connecting…','wait'); log('connecting '+(device.name||device.id));
+    const server=await withTimeout(device.gatt.connect(),15000,'connect');
+    let found=null;
+    for(const [s,n,w] of SETS){
+      try{const svc=await server.getPrimaryService(s);found=[svc,n,w,s];break;}catch(e){}
+    }
+    if(!found) throw new Error('No FAA0/FF00 service on device');
+    const [svc,n,w,s]=found;
+    st.notify=await svc.getCharacteristic(n); st.write=await svc.getCharacteristic(w);
+    st.asm=new FrameAssembler();
+    st.notify.addEventListener('characteristicvaluechanged',onNotify);
+    await st.notify.startNotifications();
+    log(`using service ${s.slice(4,8)} notify ${n.slice(4,8)} write ${w.slice(4,8)}`);   // L4
+    setConn(device.name||'Connected','on'); st.retry=0; st.connectedAt=Date.now();
+    $('btnConnect').hidden=true; $('btnDisconnect').hidden=false; $('btnReconnect').hidden=true;
+    try{localStorage.setItem('invictaDevId',device.id);localStorage.setItem('invictaDevName',device.name||'');}catch(e){}
+    startPolling();
+    acquireWakeLock();
+  } finally { st.connecting=false; }
 }
 function startPolling(){
   stopPolling(); st.tick=0;
-  const loop=async()=>{ await sendCmd(CMD_BASIC); if(st.tick%3===0) await sendCmd(CMD_CELLS); st.tick++; };
+  const loop=async()=>{
+    // M3 watchdog (checked every tick, even while a write is stuck): no 0x03 reply for WATCHDOG_MS -> force reconnect
+    const ref=Math.max(st.last,st.connectedAt);
+    if(ref && Date.now()-ref>WATCHDOG_MS){ log(`no data for ${WATCHDOG_MS/1000} s, reconnecting`); forceReconnect(); return; }
+    if(st.loopBusy||st.writePending||!st.write) return;      // M3: skip while a write is pending
+    st.loopBusy=true;
+    try{ await sendCmd(CMD_BASIC); if(st.tick%3===0) await sendCmd(CMD_CELLS); st.tick++; }
+    finally{ st.loopBusy=false; }
+  };
   loop(); st.timer=setInterval(loop,1000);  // 03 every 1 s, 04 every 3 s
 }
 function stopPolling(){ if(st.timer)clearInterval(st.timer); st.timer=null; }
+function scheduleReconnect(immediate){
+  if(!st.wantConnected||!st.dev||st.reTimer||st.connecting) return;   // M2: single timer, no concurrent setups
+  const delay=immediate?200:Math.min(15000,1000*Math.pow(2,st.retry++))+Math.floor(Math.random()*500);
+  setConn(`Reconnecting in ${Math.ceil(delay/1000)} s…`,'wait');
+  st.reTimer=setTimeout(async()=>{
+    st.reTimer=null;
+    if(!st.wantConnected) return;
+    try{ await setup(st.dev); }catch(e){ log('reconnect failed: '+e.message); scheduleReconnect(); }
+  },delay);
+}
+function forceReconnect(){
+  stopPolling(); st.write=null;
+  try{ st.dev&&st.dev.gatt.connected&&st.dev.gatt.disconnect(); }catch(e){}
+  scheduleReconnect();
+}
 function onDisc(){
-  stopPolling(); st.write=null; setConn('Disconnected','');
+  stopPolling(); st.write=null;
   log('disconnected');
-  if(!st.wantConnected){ $('btnConnect').hidden=false; $('btnDisconnect').hidden=true; return; }
-  const delay=Math.min(15000,1000*Math.pow(2,st.retry++));
-  setConn(`Reconnecting in ${Math.round(delay/1000)} s…`,'wait');
-  setTimeout(async()=>{ if(!st.wantConnected) return; try{ await setup(st.dev);}catch(e){log('reconnect failed: '+e.message); onDisc();} },delay);
+  if(st.connecting) return;            // setup() failure path will schedule the retry
+  if(!st.wantConnected){ showIdleButtons(); setConn('Disconnected',''); return; }
+  scheduleReconnect();
+}
+function showIdleButtons(){
+  $('btnConnect').hidden=false; $('btnDisconnect').hidden=true;
+  const canRe=!!(navigator.bluetooth&&navigator.bluetooth.getDevices&&localStorage.getItem('invictaDevId'));
+  const b=$('btnReconnect'); b.hidden=!canRe; if(canRe) b.textContent='Reconnect '+(localStorage.getItem('invictaDevName')||'last battery');   // L2
 }
 async function connectNew(){
+  let dev;
   try{
-    const dev=await navigator.bluetooth.requestDevice({
+    // L3: requestDevice is the first await so the user gesture is preserved
+    dev=await navigator.bluetooth.requestDevice({
       filters:[{services:['0000ff00-0000-1000-8000-00805f9b34fb']},{namePrefix:'Starter'}],
       optionalServices:['0000faa0-0000-1000-8000-00805f9b34fb','0000ff00-0000-1000-8000-00805f9b34fb']});
-    await setup(dev);
-  }catch(e){ log('connect: '+((e&&(e.name||e.message))?(e.name+' '+e.message):JSON.stringify(e)||String(e))); setConn('Disconnected',''); }
+  }catch(e){ log('connect: '+((e&&(e.name||e.message))?(e.name+' '+e.message):JSON.stringify(e)||String(e))); setConn('Disconnected',''); return; }
+  if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
+  st.retry=0;
+  try{ await setup(dev); }catch(e){ log('connect: '+e.message); scheduleReconnect(); }
 }
 async function reconnectLast(){
   try{
-    const devs=await navigator.bluetooth.getDevices();
     const id=localStorage.getItem('invictaDevId');
-    const d=devs.find(x=>x.id===id)||devs[0];
-    if(!d) return connectNew();
+    const devs=await navigator.bluetooth.getDevices();
+    const d=devs.find(x=>x.id===id);                 // L3: saved id only
+    if(!d){ log('last battery not remembered by this browser; tap Connect'); $('btnReconnect').hidden=true; return; }
+    if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
+    st.retry=0;
     await setup(d);
-  }catch(e){ log('reconnect: '+e.message); }
+  }catch(e){ log('reconnect: '+e.message); scheduleReconnect(); }
 }
 $('btnConnect').onclick=connectNew;
 $('btnReconnect').onclick=reconnectLast;
-$('btnDisconnect').onclick=()=>{ st.wantConnected=false; stopPolling(); try{st.dev&&st.dev.gatt.disconnect();}catch(e){} };
+$('btnDisconnect').onclick=()=>{
+  st.wantConnected=false; stopPolling();
+  if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
+  try{st.dev&&st.dev.gatt.disconnect();}catch(e){}
+  setConn('Disconnected',''); showIdleButtons();
+};
+// M4: on return to foreground re-check link, restart polling, re-acquire wake lock
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible'||!st.wantConnected||!st.dev) return;
+  if(st.dev.gatt&&st.dev.gatt.connected&&st.write){ startPolling(); acquireWakeLock(); }
+  else { if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;} st.retry=0; scheduleReconnect(true); }
+});
 (async()=>{
   if(!navigator.bluetooth){ $('unsupported').hidden=false; $('btnConnect').disabled=true; return; }
   if(navigator.bluetooth.getDevices){
-    try{ const devs=await navigator.bluetooth.getDevices(); if(devs.length){ const b=$('btnReconnect'); b.hidden=false; b.textContent='Reconnect '+(localStorage.getItem('invictaDevName')||devs[0].name||'last battery'); } }catch(e){}
+    try{ const devs=await navigator.bluetooth.getDevices(); const id=localStorage.getItem('invictaDevId');
+      const d=devs.find(x=>x.id===id); if(d){ const b=$('btnReconnect'); b.hidden=false; b.textContent='Reconnect '+(localStorage.getItem('invictaDevName')||d.name||'last battery'); } }catch(e){}
   }
 })();
 </script>
