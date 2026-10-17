@@ -156,7 +156,7 @@ function render(){
   const b=st.basic; if(!b) return;
   $('vSoc').innerHTML=(b.soc??'–')+'<small>%</small>';
   const bar=$('socBar'); bar.style.width=(b.soc||0)+'%'; bar.style.background=b.soc<20?'var(--bad)':b.soc<40?'var(--warn)':'var(--ok)';
-  $('vAh').textContent=`${b.remainAh.toFixed(2)} / ${b.fullAh.toFixed(2)} Ah (1 BMS) · ×2: ${(b.remainAh*2).toFixed(1)} / ${(b.fullAh*2).toFixed(1)} Ah`;
+  {const full=b.remainAh>b.fullAh*1.02?b.fullAh*2:b.fullAh;$('vAh').textContent=`${b.remainAh.toFixed(1)} of ${full.toFixed(0)} Ah remaining (pack)`;}
   $('vV').innerHTML=b.voltage.toFixed(2)+'<small> V</small>';
   $('vVsub').textContent=b.date?`mfg ${b.date}`:'';
   $('vSt').innerHTML=`<span class="st-${b.status}">${b.status}</span>`;
