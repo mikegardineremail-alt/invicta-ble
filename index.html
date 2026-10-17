@@ -115,8 +115,8 @@ if (typeof module!=='undefined') module.exports={CMD_BASIC,CMD_CELLS,ALLOWED_HEX
 </script>
 <script>
 const SETS=[ // [service, notify, write] - FAA0 confirmed on SNLHMAX; FF00 fallback
-  [0xfaa0,0xfaa1,0xfaa2],
-  [0xff00,0xff01,0xff02],
+  ['0000faa0-0000-1000-8000-00805f9b34fb','0000faa1-0000-1000-8000-00805f9b34fb','0000faa2-0000-1000-8000-00805f9b34fb'],
+  ['0000ff00-0000-1000-8000-00805f9b34fb','0000ff01-0000-1000-8000-00805f9b34fb','0000ff02-0000-1000-8000-00805f9b34fb'],
 ];
 const $=id=>document.getElementById(id);
 const st={dev:null,notify:null,write:null,asm:new FrameAssembler(),basic:null,cells:[],timer:null,tick:0,
@@ -227,10 +227,10 @@ function onDisc(){
 async function connectNew(){
   try{
     const dev=await navigator.bluetooth.requestDevice({
-      filters:[{services:[0xfaa0]},{services:[0xff00]},{namePrefix:'Starter Bat'}],
-      optionalServices:[0xfaa0,0xff00]});
+      filters:[{services:['0000ff00-0000-1000-8000-00805f9b34fb']},{namePrefix:'Starter'}],
+      optionalServices:['0000faa0-0000-1000-8000-00805f9b34fb','0000ff00-0000-1000-8000-00805f9b34fb']});
     await setup(dev);
-  }catch(e){ log('connect: '+e.message); setConn('Disconnected',''); }
+  }catch(e){ log('connect: '+((e&&(e.name||e.message))?(e.name+' '+e.message):JSON.stringify(e)||String(e))); setConn('Disconnected',''); }
 }
 async function reconnectLast(){
   try{
