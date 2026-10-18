@@ -678,7 +678,7 @@ async function reconnectLast(kind){
     let dev;
     try{
       // requestDevice must be the first await so the tap still counts as a user gesture.
-      dev=await navigator.bluetooth.requestDevice({filters:[{name:sv.name}],optionalServices:OPT_SERVICES});
+      dev=await navigator.bluetooth.requestDevice({filters:[{services:['0000ff00-0000-1000-8000-00805f9b34fb']},{namePrefix:'Starter'}],optionalServices:OPT_SERVICES});
     }catch(e){ log(`picker (${sv.name}): ${e.name||''} ${e.message||''}. Use Other to pick from all batteries`); setConn('Disconnected',''); return false; }
     tmMark('picker');
     return connectTo(dev,'picker');
