@@ -635,10 +635,9 @@ function saved(){ let id=null,name=null; try{ id=localStorage.getItem('invictaDe
 function showIdleButtons(){
   $('btnConnect').hidden=false; $('btnDisconnect').hidden=true;
   const sv=saved(), canRe=!!(navigator.bluetooth&&(sv.id||sv.name));
-  const b=$('btnReconnect'); b.hidden=!canRe;
-  if(canRe) b.textContent=sv.name?`Connect to ${sv.name}`:'Connect to my battery';   // L2
-  const c=$('btnConnect'); c.textContent=canRe?'Other':'Connect'; c.className=canRe?'btn ghost':'btn primary';
-  const d=document.querySelector&&document.querySelector('.dock'); if(d&&d.classList) d.classList.toggle('quick',canRe);
+  $('btnReconnect').hidden=true;   // single button: the picker path works reliably in Bluefy
+  const c=$('btnConnect'); c.textContent='Connect to battery'; c.className='btn primary';
+  const d=document.querySelector&&document.querySelector('.dock'); if(d&&d.classList) d.classList.remove('quick');
 }
 async function connectNew(){
   let dev;
@@ -693,7 +692,7 @@ async function connectTo(d,how){
   st.retry=0;
   try{ await setup(d); return true; }catch(e){ log('reconnect: '+e.message); scheduleReconnect(); return true; }
 }
-function showConnectPrimary(){ const c=$('btnConnect'); c.textContent='Connect'; c.className='btn primary'; }
+function showConnectPrimary(){ const c=$('btnConnect'); c.textContent='Connect to battery'; c.className='btn primary'; }
 $('btnConnect').onclick=connectNew;
 $('btnReconnect').onclick=()=>{ const sv=saved(); if(st.dev&&sv.id&&st.dev.id===sv.id) return reconnectLast('reconnect'); return connectNew(); };  // fresh open: same picker path as Other (works in Bluefy)
 $('btnDisconnect').onclick=()=>{
