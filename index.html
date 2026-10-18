@@ -122,6 +122,8 @@ main{display:grid;gap:9px;transition:opacity .3s,filter .3s}
 .rw{display:flex;justify-content:space-between;gap:12px;align-items:center;min-height:40px;border-bottom:1px solid var(--line);font-size:14px}
 .rw:last-child{border-bottom:0}.rw .k{color:var(--mut)}.rw .vv{text-align:right;font-weight:600}
 .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+#vConnT{font-weight:500;font-size:12.5px;color:var(--txt);text-align:left;line-height:1.5}
+.rw.stack{flex-direction:column;align-items:flex-start;gap:2px;padding:9px 0}
 #vTall{white-space:pre-line;line-height:1.5;padding:6px 0}
 #log{font:11px/1.45 ui-monospace,Menlo,monospace;color:var(--ter);white-space:pre-wrap;max-height:180px;overflow:auto;margin-top:8px}
 .foot{font-size:11px;color:var(--ter);text-align:center;line-height:1.5;margin-top:4px}
@@ -217,6 +219,7 @@ body.stale .dot.on{animation:none;background:var(--warm);box-shadow:none}
       <div class="rw"><span class="k">Switches (MOSFETs)</span><span class="chips" id="fets">–</span></div>
       <div class="rw"><span class="k">Protections</span><span class="chips" id="prot">–</span></div>
       <div class="rw"><span class="k">Firmware · made</span><span class="vv" id="vSw">–</span></div>
+      <div class="rw stack"><span class="k">Last connect (seconds per step)</span><span class="vv" id="vConnT">–</span></div>
       <div class="rw"><span class="k">Updates received</span><span class="vv" id="vRate">–</span></div>
     </div>
     <div class="card" style="margin-top:10px"><div class="lbl">Connection log</div><div id="log"></div></div>
@@ -338,7 +341,7 @@ const SETS=[ // [service, notify, write] - FAA0 confirmed on SNLHMAX; FF00 fallb
   ['0000faa0-0000-1000-8000-00805f9b34fb','0000faa1-0000-1000-8000-00805f9b34fb','0000faa2-0000-1000-8000-00805f9b34fb'],
   ['0000ff00-0000-1000-8000-00805f9b34fb','0000ff01-0000-1000-8000-00805f9b34fb','0000ff02-0000-1000-8000-00805f9b34fb'],
 ];
-const WRITE_TIMEOUT_MS=1000, WATCHDOG_MS=6000, CELLS_STALE_MS=10000, BASIC_STALE_MS=10000;
+const WRITE_TIMEOUT_MS=1000, WATCHDOG_MS=6000, CONNECT_TIMEOUT_MS=15000, RETRY_FIRST_MS=300, CELLS_STALE_MS=10000, BASIC_STALE_MS=10000;
 const $=id=>document.getElementById(id);
 const st={dev:null,devId:null,notify:null,write:null,asm:new FrameAssembler(),basic:null,cells:[],cellsAt:0,timer:null,tick:0,
   wantConnected:false,retry:0,last:0,frames:0,writePending:false,loopBusy:false,reTimer:null,connecting:false,connectedAt:0,wl:null,
@@ -349,6 +352,14 @@ function setConn(txt,cls){$('connTxt').textContent=txt;$('dot').className='dot '
   if(cls!=='on'&&!st.last){ const u=$('vUpd'); u.textContent=cls==='wait'?'Connecting…':'Not connected'; u.className='chip'; }
   if(cls!=='on'&&st.last) updAge(); }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// Connect timing: one record per attempt; stages logged as they complete, summary shown under Details.
+function tmStart(kind){ st.tm={kind,t0:Date.now(),last:Date.now(),parts:[],done:false}; }
+function tmMark(stage){ const t=st.tm; if(!t||t.done) return; const now=Date.now();
+  const step=now-t.last; t.parts.push([stage,step]); t.last=now; log(`time ${stage}: ${step} ms (at ${now-t.t0} ms)`); }
+function tmSummary(){ const t=st.tm; if(!t) return '';
+  const SHORT={'gatt.connect':'connect','characteristics':'chars','notify on':'notify','first data':'1st data'};
+  return `${t.kind} ${((t.last-t.t0)/1000).toFixed(1)} s: `+t.parts.map(([k,ms])=>`${SHORT[k]||k} ${(ms/1000).toFixed(1)}`).join(' · '); }
+function tmFinish(){ const t=st.tm; if(!t||t.done) return; t.done=true; const s=tmSummary(); log('time '+s); const e=$('vConnT'); if(e) e.textContent=s; }
 function withTimeout(p,ms,what){let t;return Promise.race([p,new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(what+' timeout')),ms);})]).finally(()=>clearTimeout(t));}
 
 // Returns true if written. Never queues: if a write is still pending the call is skipped (M3).
@@ -377,7 +388,7 @@ function onNotify(ev){
     const kind=classifyFrame(f);
     if(kind==='bad-checksum'){ log(`checksum mismatch cmd 0x${f.cmd.toString(16)}: ${toHex(f.frame)}`); continue; }   // H2: never display
     if(kind==='bms-error'){ log(`BMS status 0x${f.status.toString(16)} for cmd 0x${f.cmd.toString(16)}`); continue; }
-    if(kind==='basic'){ const b=parseBasic(f.payload); if(!b){log('short 0x03 payload');continue;} st.basic=b; st.last=Date.now(); st.frames++; }
+    if(kind==='basic'){ const b=parseBasic(f.payload); if(!b){log('short 0x03 payload');continue;} st.basic=b; st.last=Date.now(); st.frames++; if(st.tm&&!st.tm.done){ tmMark('first data'); tmFinish(); } }
     else if(kind==='cells'){ st.cells=parseCells(f.payload); st.cellsAt=Date.now(); }
     render();
   }
@@ -538,23 +549,35 @@ async function setup(device){
     device.removeEventListener('gattserverdisconnected',onDisc);
     device.addEventListener('gattserverdisconnected',onDisc);
     setConn('Connecting…','wait'); log('connecting '+(device.name||device.id));
-    const server=await withTimeout(device.gatt.connect(),15000,'connect');
+    if(!st.tm||st.tm.done) tmStart('reconnect');
+    const server=await withTimeout(device.gatt.connect(),CONNECT_TIMEOUT_MS,'connect');
+    tmMark('gatt.connect');
+    // Exact UUIDs, FAA0 first (confirmed on SNLHMAX); never getPrimaryServices() (full discovery).
     let found=null;
     for(const [s,n,w] of SETS){
       try{const svc=await server.getPrimaryService(s);found=[svc,n,w,s];break;}catch(e){}
     }
     if(!found) throw new Error('No FAA0/FF00 service on device');
     const [svc,n,w,s]=found;
+    tmMark('service');
     st.notify=await svc.getCharacteristic(n); st.write=await svc.getCharacteristic(w);
+    tmMark('characteristics');
     st.asm=new FrameAssembler();
     st.notify.addEventListener('characteristicvaluechanged',onNotify);
     await st.notify.startNotifications();
+    tmMark('notify on');
+    // First 0x03 poll goes out immediately (connectedAt first so the watchdog can't see a stale st.last).
+    st.connectedAt=Date.now(); st.retry=0;
+    startPolling();
     log(`using service ${s.slice(4,8)} notify ${n.slice(4,8)} write ${w.slice(4,8)}`);   // L4
-    setConn(device.name||'Connected','on'); st.retry=0; st.connectedAt=Date.now();
+    setConn(device.name||'Connected','on');
     $('btnConnect').hidden=true; $('btnDisconnect').hidden=false; $('btnReconnect').hidden=true;
     try{localStorage.setItem('invictaDevId',device.id);localStorage.setItem('invictaDevName',device.name||'');}catch(e){}
-    startPolling();
     acquireWakeLock();
+  } catch(e){
+    if(st.tm&&!st.tm.done){ st.tm.done=true; log(`time: ${st.tm.kind} failed after ${Date.now()-st.tm.t0} ms (${e.message})`); }
+    if(/timeout/.test(e.message)) log('tip: a weak signal (around −90 dBm or lower) makes connecting slow; bring the phone closer or open the bonnet');
+    throw e;
   } finally { st.connecting=false; }
 }
 function startPolling(){
@@ -571,13 +594,15 @@ function startPolling(){
   loop(); st.timer=setInterval(loop,1000);  // 03 every 1 s, 04 every 3 s
 }
 function stopPolling(){ if(st.timer)clearInterval(st.timer); st.timer=null; }
+function retryDelay(n){ return n<=0?RETRY_FIRST_MS+Math.floor(Math.random()*200):Math.min(15000,1000*Math.pow(2,n-1))+Math.floor(Math.random()*400); }   // 0.3, 1, 2, 4, 8, 15 s
 function scheduleReconnect(immediate){
   if(!st.wantConnected||!st.dev||st.reTimer||st.connecting) return;   // M2: single timer, no concurrent setups
-  const delay=immediate?200:Math.min(15000,1000*Math.pow(2,st.retry++))+Math.floor(Math.random()*500);
-  setConn(`Reconnecting in ${Math.ceil(delay/1000)} s…`,'wait');
+  const delay=immediate?200:retryDelay(st.retry++);
+  setConn(delay<1000?'Reconnecting…':`Reconnecting in ${Math.ceil(delay/1000)} s…`,'wait');
   st.reTimer=setTimeout(async()=>{
     st.reTimer=null;
     if(!st.wantConnected) return;
+    tmStart('retry '+st.retry);
     try{ await setup(st.dev); }catch(e){ log('reconnect failed: '+e.message); scheduleReconnect(); }
   },delay);
 }
@@ -603,27 +628,32 @@ async function connectNew(){
   let dev;
   try{
     // L3: requestDevice is the first await so the user gesture is preserved
+    tmStart('new device');
     dev=await navigator.bluetooth.requestDevice({
       filters:[{services:['0000ff00-0000-1000-8000-00805f9b34fb']},{namePrefix:'Starter'}],
       optionalServices:['0000faa0-0000-1000-8000-00805f9b34fb','0000ff00-0000-1000-8000-00805f9b34fb']});
   }catch(e){ log('connect: '+((e&&(e.name||e.message))?(e.name+' '+e.message):JSON.stringify(e)||String(e))); setConn('Disconnected',''); return; }
+  tmMark('picker');
   if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
   st.retry=0;
   try{ await setup(dev); }catch(e){ log('connect: '+e.message); scheduleReconnect(); }
 }
-async function reconnectLast(){
+async function reconnectLast(kind){
   try{
+    tmStart(typeof kind==='string'?kind:'reconnect');
     const id=localStorage.getItem('invictaDevId');
     const devs=await navigator.bluetooth.getDevices();
     const d=devs.find(x=>x.id===id);                 // L3: saved id only
-    if(!d){ log('last battery not remembered by this browser; tap Connect'); $('btnReconnect').hidden=true; return; }
+    if(!d){ log('last battery not remembered by this browser; tap Connect'); $('btnReconnect').hidden=true; showConnectPrimary(); return false; }
+    tmMark('getDevices');
     if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
     st.retry=0;
-    await setup(d);
-  }catch(e){ log('reconnect: '+e.message); scheduleReconnect(); }
+    await setup(d); return true;
+  }catch(e){ log('reconnect: '+e.message); scheduleReconnect(); return true; }
 }
+function showConnectPrimary(){ const c=$('btnConnect'); c.textContent='Connect'; c.className='btn primary'; }
 $('btnConnect').onclick=connectNew;
-$('btnReconnect').onclick=reconnectLast;
+$('btnReconnect').onclick=()=>reconnectLast('reconnect');
 $('btnDisconnect').onclick=()=>{
   st.wantConnected=false; stopPolling();
   if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
@@ -638,9 +668,14 @@ document.addEventListener('visibilitychange',()=>{
 });
 (async()=>{
   if(!navigator.bluetooth){ $('unsupported').hidden=false; $('btnConnect').disabled=true; return; }
-  if(navigator.bluetooth.getDevices){
+  // Silent reconnect on load: a battery this browser already permits can be connected without the picker
+  // (Bluefy supports getDevices since 3.2.0; iOS can connect a known peripheral directly, no scan needed).
+  if(navigator.bluetooth.getDevices&&localStorage.getItem('invictaDevId')){
     try{ const devs=await navigator.bluetooth.getDevices(); const id=localStorage.getItem('invictaDevId');
-      const d=devs.find(x=>x.id===id); if(d){ const b=$('btnReconnect'); b.hidden=false; b.textContent='Reconnect'; const c=$('btnConnect'); c.textContent='Other'; c.className='btn ghost'; } }catch(e){}
+      const d=devs.find(x=>x.id===id);
+      if(d){ const b=$('btnReconnect'); b.hidden=false; b.textContent='Reconnect'; const c=$('btnConnect'); c.textContent='Other'; c.className='btn ghost';
+        if(!st.wantConnected&&!st.connecting){ log('auto-reconnecting to last battery'); await reconnectLast('auto-reconnect'); } }
+    }catch(e){ log('getDevices: '+e.message); }
   }
 })();
 </script>

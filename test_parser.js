@@ -123,12 +123,12 @@ async function appTests(){
     navigator:{}};
   ctx.window=ctx;
   // fake device
-  const written=[]; let writeMode='ok'; let connectCalls=0; let connectGate=null;
+  const written=[], events=[]; let writeMode='ok'; let connectCalls=0; let connectGate=null;
   function mkDevice(id){
     const notifyL=[]; const devL={};
-    const notify={addEventListener:(e,f)=>notifyL.push(f),removeEventListener:(e,f)=>{const i=notifyL.indexOf(f);if(i>=0)notifyL.splice(i,1);},startNotifications:async()=>{},
+    const notify={addEventListener:(e,f)=>notifyL.push(f),removeEventListener:(e,f)=>{const i=notifyL.indexOf(f);if(i>=0)notifyL.splice(i,1);},startNotifications:async()=>{events.push('notify')},
       emit(bytes){const u=Uint8Array.from(bytes);for(const f of [...notifyL])f({target:{value:new DataView(u.buffer)}});}};
-    const write={writeValueWithoutResponse:(d)=>{ written.push(Array.from(d)); if(writeMode==='hang') return new Promise(()=>{}); if(writeMode==='reply'){ setTimeout(()=>{ if(d[2]===3) notify.emit(F3); else if(d[2]===4) notify.emit(F4); },5); } return Promise.resolve(); }};
+    const write={writeValueWithoutResponse:(d)=>{ written.push(Array.from(d)); events.push('w'+d[2]); if(writeMode==='hang') return new Promise(()=>{}); if(writeMode==='reply'){ setTimeout(()=>{ if(d[2]===3) notify.emit(F3); else if(d[2]===4) notify.emit(F4); },5); } return Promise.resolve(); }};
     const svc={getCharacteristic:async u=>u.includes('faa1')?notify:write};
     const dev={id,name:'Starter Bat '+id,notify,devL,
       addEventListener:(e,f)=>{devL[e]=f},removeEventListener:(e,f)=>{if(devL[e]===f)delete devL[e]},
@@ -153,6 +153,12 @@ async function appTests(){
   assert(st.basic&&st.basic.voltage===13.3,'basic from device'); assert(st.cells.length===4&&st.cellsAt>0);
   assert(written.every(w=>P.isAllowedBytes(Uint8Array.from(w))),'only whitelisted bytes ever written');
   assert.strictEqual(el('vAh').textContent,'76.0 of 80 Ah remaining'); assert.strictEqual(store.invictaCapK,'2'); n++; console.log('  ok connect, poll, decode, H1 text + k persisted');
+  // Speed: first 0x03 poll right after startNotifications, timing stages logged + summarised
+  const ni=events.indexOf('notify'); assert(ni>=0&&events[ni+1]==='w3','first write after notify must be 0x03, got '+events.slice(ni,ni+3));
+  const L=el('log').textContent; for(const stg of ['picker','gatt.connect','service','characteristics','notify on','first data']) assert(L.includes('time '+stg+':'),'missing timing stage '+stg);
+  assert.match(el('vConnT').textContent,/^new device \d+\.\d s: picker \d+\.\d · connect \d+\.\d · service \d+\.\d · chars \d+\.\d · notify \d+\.\d · 1st data \d+\.\d$/); n++; console.log('  ok first poll immediately after notify; timing stages + summary');
+  const d0=[...Array(20)].map(()=>ctx.retryDelay(0)); assert(Math.max(...d0)<=500&&Math.min(...d0)>=300,'first retry 0.3-0.5 s');
+  assert(ctx.retryDelay(1)>=1000&&ctx.retryDelay(1)<1400); assert(ctx.retryDelay(2)>=2000&&ctx.retryDelay(2)<2400); assert(ctx.retryDelay(10)<=15400); n++; console.log('  ok retry backoff 0.3 s, 1 s, 2 s ... capped 15 s');
   // temps in the default frame: 2981 -> 25.0 °C, 2711 -> -2.0 °C
   assert.match(el('vT1').innerHTML,/^25\.0/); assert.strictEqual(el('vT1').style.color,P.tempColor(25)); assert.match(el('vT2').innerHTML,/^-2\.0/);
   assert.strictEqual(el('vBand').textContent,'Cold: charging limited'); assert.strictEqual(el('vT2').style.color,P.tempColor(-2)); assert.match(el('vTall').textContent,/BMS board 25\.0°C · Ideal\nInternal -2\.0°C · Cold: charging limited/);
@@ -193,4 +199,31 @@ async function appTests(){
   assert((listeners.visibilitychange||[]).length===1); n++; console.log('  ok M4 visibilitychange handler present');
   st.wantConnected=false; for(const h of timers){clearTimeout(h);clearInterval(h);} 
 }
-appTests().then(()=>{ console.log(`\nALL ${n} TESTS PASSED`); process.exit(0); }).catch(e=>{ console.error('FAIL',e); process.exit(1); });
+async function autoReconnectTest(){
+  console.log('Silent reconnect on page load');
+  const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(x=>x[1]);
+  const els={}; const el=id=>els[id]||(els[id]={id,textContent:'',innerHTML:'',hidden:false,disabled:false,style:{},onclick:null,
+    classList:{toggle(){},add(){},remove(){},contains(){return false}}});
+  const store={invictaDevId:'A'}; const timers=new Set(); const writes=[]; let connects=0, picker=0;
+  const ctx={console,Math,Date,JSON,Promise,Error,Uint8Array,Object,Array,Set,String,Number,
+    setTimeout:(f,ms)=>{const h=setTimeout(()=>{timers.delete(h);f();},ms);timers.add(h);return h;}, clearTimeout:h=>{clearTimeout(h);timers.delete(h);},
+    setInterval:(f,ms)=>{const h=setInterval(f,ms);timers.add(h);return h;}, clearInterval:h=>{clearInterval(h);timers.delete(h);},
+    localStorage:{getItem:k=>k in store?store[k]:null,setItem:(k,v)=>{store[k]=String(v)}},
+    document:{getElementById:el,visibilityState:'visible',addEventListener(){}}, navigator:{}};
+  ctx.window=ctx;
+  const nl=[]; const notify={addEventListener:(e,f)=>nl.push(f),removeEventListener(){},startNotifications:async()=>{}};
+  const write={writeValueWithoutResponse:d=>{writes.push(Array.from(d)); setTimeout(()=>{const u=Uint8Array.from(d[2]===3?F3:F4); for(const f of nl) f({target:{value:new DataView(u.buffer)}});},5); return Promise.resolve();}};
+  const dev={id:'A',name:'Starter Bat A',addEventListener(){},removeEventListener(){},
+    gatt:{connected:false,async connect(){connects++; this.connected=true; return {getPrimaryService:async u=>{if(u.includes('faa0'))return {getCharacteristic:async c=>c.includes('faa1')?notify:write}; throw new Error('nf')}}},disconnect(){this.connected=false}}};
+  ctx.navigator.bluetooth={requestDevice:async()=>{picker++;return dev},getDevices:async()=>[dev]};
+  vm.createContext(ctx);
+  for(const s of scripts) vm.runInContext(s+'\n;globalThis.__st=typeof st!=="undefined"?st:undefined;',ctx);
+  await new Promise(r=>setTimeout(r,600));
+  const st=ctx.__st;
+  assert.strictEqual(picker,0,'no picker'); assert.strictEqual(connects,1,'connected once without a tap'); assert(st.basic&&st.basic.soc===95,'data arrived');
+  assert(writes.every(w=>P.isAllowedBytes(Uint8Array.from(w)))); assert.match(el('log').textContent,/auto-reconnecting/);
+  assert.match(el('vConnT').textContent,/^auto-reconnect \d+\.\d s: getDevices \d+\.\d · connect .* 1st data/); n++; console.log('  ok remembered battery reconnects on load without the picker, timed');
+  // not remembered -> no connect
+  st.wantConnected=false; for(const h of timers){clearTimeout(h);clearInterval(h);}
+}
+appTests().then(autoReconnectTest).then(()=>{ console.log(`\nALL ${n} TESTS PASSED`); process.exit(0); }).catch(e=>{ console.error('FAIL',e); process.exit(1); });
