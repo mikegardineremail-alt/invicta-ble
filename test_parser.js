@@ -105,7 +105,7 @@ t('colour gradient: palette anchors + smooth + monotone warmth',()=>{
   const grn=c=>rgb(P.tempColor(c))[1]; for(let c=28;c<48;c++) assert(grn(c+1)<=grn(c),'green should fall as it warms (green->amber->rose) at '+c); });
 t('bar width maps -20..60 °C, clamped',()=>{ assert.strictEqual(P.tempBarPct(-40),4); assert.strictEqual(P.tempBarPct(20),50); assert.strictEqual(P.tempBarPct(60),100);
   assert.strictEqual(P.tempBarPct(90),100); assert.strictEqual(P.tempBarPct(null),0); });
-t('sensor names: Invicta calls #2 "Internal", #1 stays neutral',()=>{ assert.strictEqual(P.sensorName(0),'Sensor 1'); assert.strictEqual(P.sensorName(1),'Internal'); assert.strictEqual(P.sensorName(2),'Sensor 3'); });
+t('sensor names: #2 "Internal" (Invicta), #1 "BMS board" (JBD convention)',()=>{ assert.strictEqual(P.sensorName(0),'BMS board'); assert.strictEqual(P.sensorName(1),'Internal'); assert.strictEqual(P.sensorName(2),'Sensor 3'); });
 
 // ---------- App-level integration (stub DOM + Web Bluetooth) ----------
 async function appTests(){
@@ -155,8 +155,9 @@ async function appTests(){
   assert.strictEqual(el('vAh').textContent,'76.0 of 80 Ah remaining'); assert.strictEqual(store.invictaCapK,'2'); n++; console.log('  ok connect, poll, decode, H1 text + k persisted');
   // temps in the default frame: 2981 -> 25.0 °C, 2711 -> -2.0 °C
   assert.match(el('vT1').innerHTML,/^25\.0/); assert.strictEqual(el('vT1').style.color,P.tempColor(25)); assert.match(el('vT2').innerHTML,/^-2\.0/);
-  assert.strictEqual(el('vTsub').textContent,'Cold: charging limited'); assert.match(el('vTall').textContent,/Sensor 1 25\.0°C \(Ideal\) · Internal -2\.0°C/);
-  assert(parseFloat(el('bT1').style.width)>0); n++; console.log('  ok temperature tile renders labels, colour and band');
+  assert.strictEqual(el('vBand').textContent,'Cold: charging limited'); assert.strictEqual(el('vT2').style.color,P.tempColor(-2)); assert.match(el('vTall').textContent,/BMS board 25\.0°C · Ideal\nInternal -2\.0°C · Cold: charging limited/);
+  assert.match(el('vTgap').innerHTML,/^27\.0.*board warmer/); assert.strictEqual(el('socBar').style.width,'95%'); assert.strictEqual(el('gMaskArc').style.strokeDashoffset,String(100-(18/80*100)));
+  n++; console.log('  ok temperature hero renders main/board/gap, colour, band, gauge + charge bar');
   assert.match(el('vI2').innerHTML,/est\./); n++; console.log('  ok M5 x2 labelled est.');
 
   // H2 end-to-end: corrupt frame must not change display

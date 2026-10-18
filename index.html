@@ -17,10 +17,10 @@
   --in1:#151a26;--in2:#0b0e16;--cool:#22d3ee;--teal:#14b8a6;--ok:#34d399;--warm:#fbbf24;--warm2:#f59e0b;--hot:#fb7185;--amb:#a78bfa}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{background:var(--bg)}
-body{margin:0;min-height:100vh;min-height:100dvh;color:var(--txt);
+body{margin:0;--x:0;min-height:100vh;min-height:100dvh;color:var(--txt);
   font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums;
   -webkit-font-smoothing:antialiased;
-  background:radial-gradient(120% 60% at 50% 20%,rgba(34,211,238,.16),transparent 60%),var(--bg);background-attachment:fixed;
+  background:radial-gradient(120% 50% at 50% 12%,var(--glowc),transparent 62%),var(--bg);background-attachment:fixed;
   padding:calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 96px) calc(env(safe-area-inset-left) + 16px)}
 .lbl{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--mut);font-weight:600}
 .unit{font-size:.45em;color:var(--mut);font-weight:500;letter-spacing:0;margin-left:2px}
@@ -36,21 +36,53 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .dot.wait{background:var(--warm)}
 @keyframes breathe{0%,100%{opacity:.55;box-shadow:0 0 0 0 rgba(34,211,238,.0)}50%{opacity:1;box-shadow:0 0 0 5px rgba(34,211,238,.14)}}
 /* cards */
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
-main{display:grid;gap:10px;transition:opacity .3s,filter .3s}
-/* hero */
-.hero{display:flex;flex-direction:column;align-items:center;padding:18px 16px 16px;text-align:center}
-.ring{position:relative;width:224px;height:224px}
-.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
-.ring .track{stroke:rgba(255,255,255,.07)}
-.ring .arc{transition:stroke-dashoffset .8s ease,stroke .4s}
-.ringIn{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.soc{font-size:84px;font-weight:650;letter-spacing:-.04em;line-height:1}
-.soc .unit{font-size:30px;margin-left:1px}
-.ringLbl{margin-top:4px}
-.status{margin-top:12px;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 16px}
+main{display:grid;gap:9px;transition:opacity .3s,filter .3s}
+/* temperature hero */
+@property --glowc{syntax:'<color>';inherits:true;initial-value:rgba(34,211,238,.14)}
+:root{--glowc:rgba(34,211,238,.14);transition:--glowc 1.2s ease}
+.thero{position:relative;overflow:hidden;padding:14px 16px 14px;isolation:isolate}
+.thero::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(70% 62% at 50% 62%,var(--glowc),transparent 72%)}
+.hHead{display:flex;align-items:center;justify-content:space-between;min-height:26px}
+.hHead .lbl{display:flex;align-items:center;gap:7px}
+.band{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;padding:4px 11px 4px 9px;border-radius:999px;
+  border:1px solid var(--line);background:rgba(255,255,255,.035);color:var(--txt);transition:color .8s}
+.band i{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.9}
+.gauge{position:relative;width:100%;max-width:340px;margin:2px auto 0;aspect-ratio:300/172}
+.gauge svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.gauge .tk{stroke:rgba(255,255,255,.28);stroke-width:1.5;stroke-linecap:round}
+.gauge text{font:600 10.5px -apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;fill:var(--ter);letter-spacing:.02em}
+.gauge text.lim{fill:var(--mut)}
+#gMaskArc{transition:stroke-dashoffset 1.1s cubic-bezier(.3,.7,.2,1)}
+#mk{transform-box:view-box;transform-origin:150px 150px;transition:transform 1.1s cubic-bezier(.3,.7,.2,1)}
+#mkHalo{animation:halo 4.2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes halo{0%,100%{opacity:.18;transform:scale(.85)}50%{opacity:.34;transform:scale(1.12)}}
+.gIn{position:absolute;left:0;right:0;bottom:4%;display:flex;flex-direction:column;align-items:center}
+.gIn .lbl{font-size:10.5px;color:var(--mut)}
+.tMain{font-size:68px;font-weight:650;letter-spacing:-.045em;line-height:1;margin-top:6px;transition:color 1s}
+.tMain .unit{font-size:24px;letter-spacing:0;margin-left:3px;vertical-align:.95em}
+.duo{display:grid;grid-template-columns:1fr 1px 1fr;align-items:center;margin-top:12px;padding:10px 4px 0;border-top:1px solid var(--line)}
+.duo .sep{height:34px;background:var(--line)}
+.ro{display:flex;flex-direction:column;align-items:center;gap:3px}
+.ro .k{font-size:11px;color:var(--mut);letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.ro .v{font-size:21px;font-weight:650;letter-spacing:-.02em;white-space:nowrap;transition:color 1s}
+.ro .v .unit{font-size:12px}
+.ro .v small{font-size:12px;font-weight:500;color:var(--mut);margin-left:6px;letter-spacing:0}
+/* charge card */
+.charge{padding:14px 16px 16px}
+.chHead{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:22px}
+.chHead .lbl{display:flex;align-items:center;gap:7px}
+.status{font-size:14px;font-weight:600;color:var(--txt);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .status.cool{color:var(--cool)}.status.ok{color:var(--ok)}.status.warm{color:var(--warm)}.status.hot{color:var(--hot)}
-.heroSub{margin-top:4px;font-size:14px;color:var(--mut)}
+.chMain{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:6px}
+.soc{font-size:52px;font-weight:650;letter-spacing:-.04em;line-height:1}
+.soc .unit{font-size:20px;margin-left:2px}
+.heroSub{font-size:13px;color:var(--mut);text-align:right;padding-bottom:6px;max-width:58%}
+.socTrack{position:relative;height:10px;margin-top:12px;border-radius:6px;background:var(--in2);border:1px solid var(--line);overflow:hidden}
+.socTrack::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent calc(25% - .5px),rgba(7,9,15,.7) 0 calc(25% + .5px),transparent 0 calc(50% - .5px),rgba(7,9,15,.7) 0 calc(50% + .5px),transparent 0 calc(75% - .5px),rgba(7,9,15,.7) 0 calc(75% + .5px),transparent 0)}
+#socBar{display:block;height:100%;width:0;border-radius:5px;background:linear-gradient(90deg,var(--warm2),var(--warm));transition:width .8s ease,background .4s}
+#socBar.chg{background:linear-gradient(90deg,var(--teal),var(--cool))}#socBar.low{background:var(--hot)}
 .card.warn{border-color:rgba(251,191,36,.45);background:linear-gradient(rgba(251,191,36,.07),rgba(251,191,36,.03))}
 .card.alert{border-color:rgba(251,113,133,.5);background:linear-gradient(rgba(251,113,133,.08),rgba(251,113,133,.03))}
 #alerts{display:grid;gap:6px}
@@ -58,20 +90,14 @@ main{display:grid;gap:10px;transition:opacity .3s,filter .3s}
 .al svg{margin-top:2px}.al.warm{color:var(--warm)}.al.hot{color:var(--hot)}
 .al span{color:var(--txt)}
 /* 3 tiles */
-.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.tile{padding:12px 12px 12px;min-height:96px;display:flex;flex-direction:column}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{padding:12px 14px;min-height:84px;display:flex;flex-direction:column}
 .tile .lbl{display:flex;align-items:center;gap:6px}
-.tile .num{font-size:26px;font-weight:650;letter-spacing:-.03em;margin-top:8px;white-space:nowrap}
+.tile .num{font-size:28px;font-weight:650;letter-spacing:-.03em;margin-top:6px;white-space:nowrap;line-height:1.05}
 .tile .num .unit{font-size:13px}
-.tile .sub{font-size:12px;color:var(--mut);margin-top:auto;padding-top:4px}
+.tile .head{display:flex;align-items:center;justify-content:space-between}
+.tile .sub{font-size:12px;color:var(--mut);margin-top:3px}
 .c-warm{color:var(--warm)}.c-cool{color:var(--cool)}.c-amb{color:var(--amb)}.c-ok{color:var(--ok)}.c-hot{color:var(--hot)}
-.temps{display:grid;gap:3px;margin-top:6px}
-.trow{display:flex;justify-content:space-between;align-items:baseline;gap:4px}
-.tn{font-size:11px;color:var(--mut)}
-.tv{font-size:18px;font-weight:650;letter-spacing:-.02em;white-space:nowrap;transition:color .6s}
-.tv .unit{font-size:11px}
-.tbar{height:5px;border-radius:3px;background:var(--in2);border:1px solid var(--line);overflow:hidden;margin-bottom:3px}
-.tbar i{display:block;height:100%;width:0;border-radius:3px;transition:width .6s,background .6s}
 .note{font-size:12px;color:var(--ter);line-height:1.45;padding:8px 0 10px;border-bottom:1px solid var(--line)}
 /* cells */
 .cellsHead{display:flex;align-items:center;justify-content:space-between;min-height:24px}
@@ -96,6 +122,7 @@ main{display:grid;gap:10px;transition:opacity .3s,filter .3s}
 .rw{display:flex;justify-content:space-between;gap:12px;align-items:center;min-height:40px;border-bottom:1px solid var(--line);font-size:14px}
 .rw:last-child{border-bottom:0}.rw .k{color:var(--mut)}.rw .vv{text-align:right;font-weight:600}
 .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+#vTall{white-space:pre-line;line-height:1.5;padding:6px 0}
 #log{font:11px/1.45 ui-monospace,Menlo,monospace;color:var(--ter);white-space:pre-wrap;max-height:180px;overflow:auto;margin-top:8px}
 .foot{font-size:11px;color:var(--ter);text-align:center;line-height:1.5;margin-top:4px}
 /* bottom bar */
@@ -109,10 +136,11 @@ main{display:grid;gap:10px;transition:opacity .3s,filter .3s}
 .btn:disabled{opacity:.4}
 /* states */
 body.disc main{opacity:.45;filter:grayscale(.9)}
-body.stale .num,body.stale .tv,body.stale .tbar,body.stale .soc,body.stale .status,body.stale #cells,body.stale .ring svg{opacity:.5}
+body.stale .num,body.stale .tMain,body.stale .ro .v,body.stale .gauge svg,body.stale .band,body.stale .soc,body.stale .status,body.stale .socTrack,body.stale #cells{opacity:.5}
+body.stale #mkHalo{animation:none;opacity:0}
 body.stale .dot.on{animation:none;background:var(--warm);box-shadow:none}
 [hidden]{display:none!important}
-@media (max-width:360px){.row3{grid-template-columns:1fr 1fr}.soc{font-size:72px}}
+@media (max-width:360px){.tMain{font-size:56px}.soc{font-size:44px}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -138,26 +166,38 @@ body.stale .dot.on{animation:none;background:var(--warm);box-shadow:none}
   <div style="margin-top:6px;font-size:14px">Open this page in the <b>Bluefy</b> browser on iPhone. Safari can't talk to Bluetooth batteries.</div>
 </div>
 <main id="dash">
-  <section class="card hero" id="hero">
-    <div class="ring">
-      <svg viewBox="0 0 220 220" aria-hidden="true">
-        <circle class="track" cx="110" cy="110" r="96" fill="none" stroke-width="12"/>
-        <circle class="arc" id="ringArc" cx="110" cy="110" r="96" fill="none" stroke="url(#gWarm)" stroke-width="12" stroke-linecap="round" stroke-dasharray="603.19" stroke-dashoffset="603.19"/>
+  <section class="card thero" id="hero" aria-label="Battery temperature">
+    <div class="hHead"><div class="lbl"><svg class="i c-amb"><use href="#iTemp"/></svg>Temperature</div><span class="band" id="vTsub"><i></i><span id="vBand">–</span></span></div>
+    <div class="gauge">
+      <svg viewBox="0 0 300 172" aria-hidden="true">
+        <defs><mask id="mFill" maskUnits="userSpaceOnUse" x="-20" y="-20" width="340" height="212"><path id="gMaskArc" d="M30 150 A120 120 0 0 1 270 150" fill="none" stroke="#fff" stroke-width="15" stroke-linecap="round" pathLength="100" stroke-dasharray="100 100" stroke-dashoffset="100"/></mask>
+          <filter id="fGlow" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="4"/></filter></defs>
+        <g id="gTrack" opacity=".16"></g>
+        <g id="gFill" mask="url(#mFill)" opacity="0"></g>
+        <g id="gTicks"></g>
+        <g id="mk" style="transform:rotate(0deg)" opacity="0">
+          <circle id="mkHalo" cx="30" cy="150" r="13" fill="#34d399" filter="url(#fGlow)"/>
+          <circle id="mkRing" cx="30" cy="150" r="8.5" fill="#0b0e16" stroke="#34d399" stroke-width="3.2"/>
+          <circle cx="30" cy="150" r="2.6" fill="#eef2ff"/>
+        </g>
       </svg>
-      <div class="ringIn"><div class="soc"><span id="vSoc">–</span><span class="unit">%</span></div><div class="lbl ringLbl">Charge</div></div>
+      <div class="gIn"><div class="lbl">Internal · cells</div><div class="tMain" id="vT2">–</div></div>
     </div>
-    <div class="status" id="vSt">Not connected</div>
-    <div class="heroSub" id="vAh">Tap Connect to find your battery</div>
+    <div class="duo">
+      <div class="ro"><span class="k">BMS board</span><span class="v" id="vT1">–</span></div>
+      <div class="sep"></div>
+      <div class="ro"><span class="k">Difference</span><span class="v" id="vTgap">–</span></div>
+    </div>
   </section>
   <section class="card" id="alertCard" hidden><div id="alerts"></div></section>
-  <section class="row3">
-    <div class="card tile"><div class="lbl"><svg class="i c-warm"><use href="#iBolt"/></svg>Voltage</div><div class="num" id="vV">–</div><div class="sub" id="vVsub">pack</div></div>
-    <div class="card tile"><div class="lbl"><svg class="i c-cool"><use href="#iFlow"/></svg>Current</div><div class="num" id="vI">–</div><div class="sub" id="vIword">–</div></div>
-    <div class="card tile"><div class="lbl"><svg class="i c-amb"><use href="#iTemp"/></svg>Temp</div>
-      <div class="temps">
-        <div class="trow"><span class="tn">Sensor 1</span><span class="tv" id="vT1">–</span></div><div class="tbar"><i id="bT1"></i></div>
-        <div class="trow"><span class="tn">Internal</span><span class="tv" id="vT2">–</span></div><div class="tbar"><i id="bT2"></i></div>
-      </div><div class="sub" id="vTsub">–</div></div>
+  <section class="card charge" aria-label="Charge">
+    <div class="chHead"><div class="lbl"><svg class="i c-warm"><use href="#iBolt"/></svg>Charge</div><div class="status" id="vSt">Not connected</div></div>
+    <div class="chMain"><div class="soc"><span id="vSoc">–</span><span class="unit">%</span></div><div class="heroSub" id="vAh">Tap Connect to find your battery</div></div>
+    <div class="socTrack"><i id="socBar"></i></div>
+  </section>
+  <section class="row2">
+    <div class="card tile"><div class="lbl" style="display:flex;align-items:center;gap:6px"><svg class="i c-warm"><use href="#iBolt"/></svg>Voltage</div><div class="num" id="vV">–</div><div class="sub" id="vVsub">pack</div></div>
+    <div class="card tile"><div class="lbl" style="display:flex;align-items:center;gap:6px"><svg class="i c-cool"><use href="#iFlow"/></svg>Current</div><div class="num" id="vI">–</div><div class="sub" id="vIword">–</div></div>
   </section>
   <section class="card">
     <div class="cellsHead"><div class="lbl" style="display:flex;gap:6px;align-items:center"><svg class="i c-warm"><use href="#iCells"/></svg>Cells</div><span class="chip" id="vDelta">–</span></div>
@@ -170,7 +210,7 @@ body.stale .dot.on{animation:none;background:var(--warm);box-shadow:none}
       <div class="rw"><span class="k">Charge cycles</span><span class="vv" id="vCyc">–</span></div>
       <div class="rw"><span class="k">Remaining (pack)</span><span class="vv" id="vRem">–</span></div>
       <div class="rw"><span class="k">Temperatures</span><span class="vv" id="vTall">–</span></div>
-      <div class="note">“Internal” is what Invicta’s manual calls the second (orange) reading. Sensor 1 isn’t named by Invicta; on JBD 12&nbsp;V boards the first sensor is usually the BMS board. To check: under heavy charge or cranking, the board sensor warms first; the cells lag.</div>
+      <div class="note">“Internal” is Invicta’s own name for the second (orange) reading. “BMS board” is inferred from the JBD convention (on JBD 12&nbsp;V boards the first sensor sits on the board); Invicta doesn’t name it. To check: under heavy charge or cranking, the board sensor warms first while the cells lag.</div>
       <div class="rw"><span class="k">Current, MAX total ×2 est.</span><span class="vv" id="vI2">–</span></div>
       <div class="rw"><span class="k">Power (raw)</span><span class="vv" id="vP">–</span></div>
       <div class="rw"><span class="k">Power ×2 est.</span><span class="vv" id="vPraw">–</span></div>
@@ -280,8 +320,8 @@ function tempColor(t){
   return '#'+c0.map((c,j)=>Math.round(c+(c1[j]-c)*f).toString(16).padStart(2,'0')).join('');
 }
 function tempBarPct(t){ if(t==null||!isFinite(t)) return 0; return Math.max(4,Math.min(100,(t+20)/80*100)); }   // -20..60 °C
-// NTC naming: Invicta manual calls the orange (2nd) reading "internal temperature"; the 1st is unlabelled.
-const SENSOR_NAMES=Object.freeze(['Sensor 1','Internal']);
+// NTC naming: Invicta manual calls the orange (2nd) reading "internal temperature"; the 1st is unnamed by Invicta.
+const SENSOR_NAMES=Object.freeze(['BMS board','Internal']);   // 'BMS board' inferred from JBD 12 V convention
 function sensorName(i){ return SENSOR_NAMES[i]||('Sensor '+(i+1)); }
 // H2: single decision point for what a reassembled frame may be used for.
 function classifyFrame(f){
@@ -343,7 +383,6 @@ function onNotify(ev){
   }
 }
 
-const RING_C=2*Math.PI*96;
 function fmt(n,d=2){return (n>0?'+':n<0?'−':'')+Math.abs(n).toFixed(d);}
 function ago(ms){const s=Math.round(ms/1000);if(s<60)return s+' s';const m=Math.round(s/60);if(m<60)return m+' min';const h=Math.round(m/60);return h+' h';}
 function plainProt(b){const out=[];const p=b.prot;
@@ -365,7 +404,7 @@ function render(){
   // hero
   const soc=b.soc??0;
   $('vSoc').textContent=b.soc??'–';
-  const arc=$('ringArc'); if(arc&&arc.setAttribute){ arc.setAttribute('stroke-dashoffset',String(RING_C*(1-Math.max(0,Math.min(100,soc))/100))); arc.setAttribute('stroke',charging?'url(#gCool)':soc<15?'#fb7185':'url(#gWarm)'); }
+  const sb=$('socBar'); sb.style.width=Math.max(0,Math.min(100,soc))+'%'; sb.className=charging?'chg':soc<15?'low':'';
   const k=capScale(b.remainAh,b.fullAh,b.soc,st.capK);
   if(k&&k!==st.capK){ st.capK=k; try{localStorage.setItem('invictaCapK',String(k));}catch(e){} log('capacity scale k='+k); }
   $('vAh').textContent=capText(b.remainAh,b.fullAh,k);
@@ -387,7 +426,7 @@ function render(){
   $('vIword').textContent=charging?'Charging':discharging?'Discharging':'Resting';
   renderTemps(b.temps);
   // details
-  $('vTall').textContent=b.temps.map((t,i)=>`${sensorName(i)} ${t.toFixed(1)}°C (${tempBand(t).label})`).join(' · ')||'–';
+  $('vTall').textContent=b.temps.map((t,i)=>`${sensorName(i)} ${t.toFixed(1)}°C · ${tempBand(t).label}`).join('\n')||'–';
   $('vI2').innerHTML=fmt(I*2,2)+' A est.';
   $('vP').innerHTML=fmt(b.voltage*I,0)+' W';
   $('vPraw').textContent=fmt(b.voltage*I*2,0)+' W est.';
@@ -399,19 +438,43 @@ function render(){
   renderAlerts(b,tmax,tmin,charging,prot);
   updAge();
 }
-function renderTemps(temps){
-  for(const i of [0,1]){
-    const t=temps[i], v=$('vT'+(i+1)), bar=$('bT'+(i+1));
-    if(t==null){ v.textContent='–'; v.style.color=''; bar.style.width='0'; continue; }
-    const col=tempColor(t);
-    v.innerHTML=t.toFixed(1)+'<span class="unit">°C</span>'; v.style.color=col;
-    bar.style.width=tempBarPct(t).toFixed(0)+'%'; bar.style.background=`linear-gradient(90deg,${col}99,${col})`;
-  }
-  // Sub-line: the band of the most concerning reading (hot/cold extremes beat 'Ideal').
-  const sev=t=>{const k=tempBand(t).key; return {tooHot:7,tooHotChg:6,frozen:6,hot:5,cold:4,warm:3,cool:1,ideal:0}[k];};
-  const pick=temps.slice(0,2).filter(t=>t!=null).sort((x,y)=>sev(y)-sev(x)||y-x)[0];
-  const sub=$('vTsub'); sub.textContent=pick!=null?tempBand(pick).label:'–'; sub.style.color=pick!=null?tempColor(pick):'';
+// Temperature gauge: 180° arc from -20 °C (left) to 60 °C (right), painted with the same tempColor gradient.
+const G_CX=150,G_CY=150,G_R=120;
+function gPt(t,r){ const a=Math.PI*Math.max(0,Math.min(1,(t+20)/80)); return [(G_CX-r*Math.cos(a)).toFixed(2),(G_CY-r*Math.sin(a)).toFixed(2)]; }
+function buildGauge(){
+  let seg='';
+  for(let t=-20;t<60;t+=1){ const [x0,y0]=gPt(t,G_R),[x1,y1]=gPt(Math.min(60,t+1.15),G_R);
+    seg+=`<path d="M${x0} ${y0} A${G_R} ${G_R} 0 0 1 ${x1} ${y1}" stroke="${tempColor(t+0.5)}" stroke-width="12" fill="none"/>`; }
+  const tr=$('gTrack'), fl=$('gFill'), tk=$('gTicks'); if(!tr||!fl||!tk) return;
+  tr.innerHTML=seg; fl.innerHTML=seg;
+  let tks='';
+  for(const t of [0,10,30,40,45]){ const [x0,y0]=gPt(t,G_R+10),[x1,y1]=gPt(t,G_R+(t===0||t===45?16:14)); tks+=`<line class="tk" x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}"${t===0||t===45?'':' opacity=".5"'}/>`; }
+  for(const t of [0,45]){ const [x,y]=gPt(t,G_R+26); tks+=`<text class="lim" x="${x}" y="${(+y+3.5).toFixed(1)}" text-anchor="middle">${t}°</text>`; }
+  tks+=`<text x="30" y="170" text-anchor="middle">−20°</text><text x="270" y="170" text-anchor="middle">60°</text>`;
+  tk.innerHTML=tks;
 }
+function hexRgb(h){ return [1,3,5].map(i=>parseInt(h.slice(i,i+2),16)).join(','); }
+function renderTemps(temps){
+  const main=temps.length>1?temps[1]:temps[0], board=temps.length>1?temps[0]:null;
+  const v2=$('vT2'), v1=$('vT1'), gap=$('vTgap'), bandTxt=$('vBand'), bandEl=$('vTsub');
+  const mk=$('mk'), ma=$('gMaskArc');
+  if(main==null){ v2.textContent='–'; v2.style.color=''; v1.textContent='–'; gap.textContent='–'; bandTxt.textContent='–'; bandEl.style.color='';
+    if(mk&&mk.setAttribute) mk.setAttribute('opacity','0'); const gf=$('gFill'); if(gf&&gf.setAttribute) gf.setAttribute('opacity','0'); if(ma) ma.style.strokeDashoffset='100'; return; }
+  const col=tempColor(main), band=tempBand(main), pct=Math.max(0,Math.min(100,(main+20)/80*100));
+  v2.innerHTML=main.toFixed(1)+'<span class="unit">°C</span>'; v2.style.color=col;
+  bandTxt.textContent=band.label; bandEl.style.color=col;
+  if(ma) ma.style.strokeDashoffset=String(100-pct);
+  const gf=$('gFill'); if(gf&&gf.setAttribute) gf.setAttribute('opacity','1');
+  if(mk&&mk.setAttribute){ mk.setAttribute('opacity','1'); mk.style.transform=`rotate(${(pct*1.8).toFixed(2)}deg)`;
+    const h=$('mkHalo'), r=$('mkRing'); if(h&&h.setAttribute) h.setAttribute('fill',col); if(r&&r.setAttribute) r.setAttribute('stroke',col); }
+  const root=typeof document!=='undefined'&&document.documentElement;
+  if(root&&root.style&&root.style.setProperty) root.style.setProperty('--glowc',`rgba(${hexRgb(col)},.17)`);
+  if(board==null){ v1.textContent='–'; gap.textContent='–'; return; }
+  v1.innerHTML=board.toFixed(1)+'<span class="unit">°C</span>'; v1.style.color=tempColor(board);
+  const d=board-main, ad=Math.abs(d);
+  gap.innerHTML=ad.toFixed(1)+'<span class="unit">°C</span><small>'+(ad<0.3?'even':d>0?'board warmer':'board cooler')+'</small>';
+}
+buildGauge();
 function cellInfo(){
   const b=st.basic; const c=st.cells.slice(0,(b&&b.cellCount)||st.cells.length);
   if(!c.length) return null;
