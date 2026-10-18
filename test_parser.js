@@ -83,6 +83,30 @@ t('10 DD-flood keeps buffer bounded',()=>{ const a=new P.FrameAssembler(); let m
   for(let k=0;k<1000;k++){a.feed([0xDD,1,0,0xFF,...Array(16).fill(0)]); mx=Math.max(mx,a.buf.length);} assert(mx<=300,'max '+mx);
   const b=new P.FrameAssembler(); mx=0; for(let k=0;k<1000;k++){b.feed([0xDD,3,0,64,...Array(16).fill(0xDD)]); mx=Math.max(mx,b.buf.length);} assert(mx<=320,'valid-looking flood max '+mx); });
 
+console.log('Temperature bands (LiFePO4 / Invicta spec)');
+const key=c=>P.tempBand(c).key;
+t('band edges',()=>{
+  const cases=[[-25,'frozen'],[-20.1,'frozen'],[-20,'cold'],[-0.1,'cold'],[0,'cool'],[9.9,'cool'],[10,'ideal'],[27.5,'ideal'],[27.9,'ideal'],[29.9,'ideal'],
+    [30,'warm'],[39.9,'warm'],[40,'hot'],[45,'hot'],[45.1,'tooHotChg'],[59.9,'tooHotChg'],[60,'tooHot'],[85,'tooHot']];
+  for(const [c,k] of cases) assert.strictEqual(key(c),k,c+' -> '+key(c)+' expected '+k); });
+t('band labels and levels',()=>{
+  assert.strictEqual(P.tempBand(-5).label,'Cold: charging limited'); assert.strictEqual(P.tempBand(-30).label,'Too cold to charge');
+  assert.strictEqual(P.tempBand(5).label,'Cool'); assert.strictEqual(P.tempBand(25).label,'Ideal'); assert.strictEqual(P.tempBand(35).label,'Warm');
+  assert.strictEqual(P.tempBand(42).label,'Hot, ageing faster'); assert.strictEqual(P.tempBand(50).label,'Too hot to charge'); assert.strictEqual(P.tempBand(65).label,'Too hot');
+  assert.strictEqual(P.tempBand(25).lvl,'ok'); assert.strictEqual(P.tempBand(65).lvl,'hot'); });
+t('band rejects bad input',()=>{ for(const v of [null,undefined,NaN,Infinity,'25']) assert.strictEqual(P.tempBand(v),null); });
+t('colour gradient: palette anchors + smooth + monotone warmth',()=>{
+  assert.strictEqual(P.tempColor(-30),'#22d3ee'); assert.strictEqual(P.tempColor(0),'#22d3ee'); assert.strictEqual(P.tempColor(20),'#34d399');
+  assert.strictEqual(P.tempColor(35),'#fbbf24'); assert.strictEqual(P.tempColor(42),'#f59e0b'); assert.strictEqual(P.tempColor(55),'#fb7185'); assert.strictEqual(P.tempColor(100),'#fb7185');
+  assert.strictEqual(P.tempColor(null),'#8b93a7');
+  const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)); let prev=rgb(P.tempColor(-20));
+  for(let c=-19.5;c<=80;c+=0.5){ const x=rgb(P.tempColor(c)); assert(/^#[0-9a-f]{6}$/.test(P.tempColor(c)));
+    assert(Math.max(...x.map((v,j)=>Math.abs(v-prev[j])))<=40,'jump at '+c); prev=x; }
+  const grn=c=>rgb(P.tempColor(c))[1]; for(let c=28;c<48;c++) assert(grn(c+1)<=grn(c),'green should fall as it warms (green->amber->rose) at '+c); });
+t('bar width maps -20..60 °C, clamped',()=>{ assert.strictEqual(P.tempBarPct(-40),4); assert.strictEqual(P.tempBarPct(20),50); assert.strictEqual(P.tempBarPct(60),100);
+  assert.strictEqual(P.tempBarPct(90),100); assert.strictEqual(P.tempBarPct(null),0); });
+t('sensor names: Invicta calls #2 "Internal", #1 stays neutral',()=>{ assert.strictEqual(P.sensorName(0),'Sensor 1'); assert.strictEqual(P.sensorName(1),'Internal'); assert.strictEqual(P.sensorName(2),'Sensor 3'); });
+
 // ---------- App-level integration (stub DOM + Web Bluetooth) ----------
 async function appTests(){
   console.log('App integration (M2, M3, H2 end-to-end, L1-L3, L6)');
@@ -129,6 +153,10 @@ async function appTests(){
   assert(st.basic&&st.basic.voltage===13.3,'basic from device'); assert(st.cells.length===4&&st.cellsAt>0);
   assert(written.every(w=>P.isAllowedBytes(Uint8Array.from(w))),'only whitelisted bytes ever written');
   assert.strictEqual(el('vAh').textContent,'76.0 of 80 Ah remaining'); assert.strictEqual(store.invictaCapK,'2'); n++; console.log('  ok connect, poll, decode, H1 text + k persisted');
+  // temps in the default frame: 2981 -> 25.0 °C, 2711 -> -2.0 °C
+  assert.match(el('vT1').innerHTML,/^25\.0/); assert.strictEqual(el('vT1').style.color,P.tempColor(25)); assert.match(el('vT2').innerHTML,/^-2\.0/);
+  assert.strictEqual(el('vTsub').textContent,'Cold: charging limited'); assert.match(el('vTall').textContent,/Sensor 1 25\.0°C \(Ideal\) · Internal -2\.0°C/);
+  assert(parseFloat(el('bT1').style.width)>0); n++; console.log('  ok temperature tile renders labels, colour and band');
   assert.match(el('vI2').innerHTML,/est\./); n++; console.log('  ok M5 x2 labelled est.');
 
   // H2 end-to-end: corrupt frame must not change display
