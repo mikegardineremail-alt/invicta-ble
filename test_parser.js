@@ -138,7 +138,7 @@ async function appTests(){
   }
   const devA=mkDevice('A'), devB=mkDevice('B');
   let reqDev=devA;
-  ctx.navigator.bluetooth={requestDevice:async()=>reqDev,getDevices:async()=>[devB]};
+  let pickerCalls=0; ctx.navigator.bluetooth={requestDevice:async()=>{pickerCalls++;return reqDev},getDevices:async()=>[devB]};
   vm.createContext(ctx);
   for(const s of scripts) vm.runInContext(s+'\n;globalThis.__st=typeof st!=="undefined"?st:undefined;globalThis.__api={sendCmd:typeof sendCmd!=="undefined"?sendCmd:null,setup:typeof setup!=="undefined"?setup:null,scheduleReconnect:typeof scheduleReconnect!=="undefined"?scheduleReconnect:null,CMD_BASIC};',ctx);
   const st=ctx.__st, api=ctx.__api; const wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -190,8 +190,11 @@ async function appTests(){
   el('btnDisconnect').onclick(); await sleep0();
   assert.strictEqual(el('btnConnect').hidden,false); assert.strictEqual(el('btnReconnect').hidden,false); n++; console.log('  ok L2 reconnect button reappears after manual disconnect');
   // L3: reconnectLast with saved id A but getDevices only has B -> must NOT connect to B
-  const ccB=connectCalls; await el('btnReconnect').onclick(); await sleep0();
-  assert.strictEqual(connectCalls,ccB); assert.match(el('log').textContent,/not remembered/); n++; console.log('  ok L3 reconnectLast matches saved id only');
+  assert.match(el('btnReconnect').textContent,/^Connect to Starter Bat A$/);
+  const pk=pickerCalls; await el('btnReconnect').onclick(); await wait(100);
+  assert.strictEqual(pickerCalls,pk,'no picker for same-session reconnect'); assert.strictEqual(st.dev.id,'A'); assert.strictEqual(devB.gatt.connected,false,'never B');
+  n++; console.log('  ok L3 one-tap reconnect goes to the saved battery only, no picker');
+  el('btnDisconnect').onclick(); await sleep0();
   // L6: switching to device B clears A's data
   reqDev=devB; writeMode='hang'; await el('btnConnect').onclick(); await sleep0();
   assert.strictEqual(st.basic,null); assert.strictEqual(st.cells.length,0); n++; console.log('  ok L6 data cleared on device switch');
@@ -199,31 +202,62 @@ async function appTests(){
   assert((listeners.visibilitychange||[]).length===1); n++; console.log('  ok M4 visibilitychange handler present');
   st.wantConnected=false; for(const h of timers){clearTimeout(h);clearInterval(h);} 
 }
-async function autoReconnectTest(){
-  console.log('Silent reconnect on page load');
+// Boot the whole page in a fresh context, as on a Bluefy relaunch.
+async function boot({store={},devs=[],getDevicesThrows=false,devId='A',devName='Starter Bat A'}={}){
   const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(x=>x[1]);
-  const els={}; const el=id=>els[id]||(els[id]={id,textContent:'',innerHTML:'',hidden:false,disabled:false,style:{},onclick:null,
-    classList:{toggle(){},add(){},remove(){},contains(){return false}}});
-  const store={invictaDevId:'A'}; const timers=new Set(); const writes=[]; let connects=0, picker=0;
+  const mkCl=()=>({s:new Set(),toggle(c,v){(v===undefined?!this.s.has(c):v)?this.s.add(c):this.s.delete(c);},add(c){this.s.add(c)},remove(c){this.s.delete(c)},contains(c){return this.s.has(c)}});
+  const els={}; const el=id=>els[id]||(els[id]={id,textContent:'',innerHTML:'',hidden:false,disabled:false,style:{},onclick:null,classList:mkCl()});
+  const timers=new Set(); const writes=[]; let connects=0; const pickerOpts=[];
+  const body={classList:mkCl()}; const dock={classList:mkCl()};
   const ctx={console,Math,Date,JSON,Promise,Error,Uint8Array,Object,Array,Set,String,Number,
     setTimeout:(f,ms)=>{const h=setTimeout(()=>{timers.delete(h);f();},ms);timers.add(h);return h;}, clearTimeout:h=>{clearTimeout(h);timers.delete(h);},
     setInterval:(f,ms)=>{const h=setInterval(f,ms);timers.add(h);return h;}, clearInterval:h=>{clearInterval(h);timers.delete(h);},
     localStorage:{getItem:k=>k in store?store[k]:null,setItem:(k,v)=>{store[k]=String(v)}},
-    document:{getElementById:el,visibilityState:'visible',addEventListener(){}}, navigator:{}};
+    document:{getElementById:el,body,querySelector:q=>q==='.dock'?dock:null,visibilityState:'visible',addEventListener(){}}, navigator:{}};
   ctx.window=ctx;
   const nl=[]; const notify={addEventListener:(e,f)=>nl.push(f),removeEventListener(){},startNotifications:async()=>{}};
   const write={writeValueWithoutResponse:d=>{writes.push(Array.from(d)); setTimeout(()=>{const u=Uint8Array.from(d[2]===3?F3:F4); for(const f of nl) f({target:{value:new DataView(u.buffer)}});},5); return Promise.resolve();}};
-  const dev={id:'A',name:'Starter Bat A',addEventListener(){},removeEventListener(){},
+  const dev={id:devId,name:devName,addEventListener(){},removeEventListener(){},
     gatt:{connected:false,async connect(){connects++; this.connected=true; return {getPrimaryService:async u=>{if(u.includes('faa0'))return {getCharacteristic:async c=>c.includes('faa1')?notify:write}; throw new Error('nf')}}},disconnect(){this.connected=false}}};
-  ctx.navigator.bluetooth={requestDevice:async()=>{picker++;return dev},getDevices:async()=>[dev]};
+  ctx.navigator.bluetooth={requestDevice:async o=>{pickerOpts.push(o);return dev},
+    getDevices:async()=>{ if(getDevicesThrows) throw new Error('not allowed'); return devs.map(x=>x==='DEV'?dev:x); }};
   vm.createContext(ctx);
   for(const s of scripts) vm.runInContext(s+'\n;globalThis.__st=typeof st!=="undefined"?st:undefined;',ctx);
   await new Promise(r=>setTimeout(r,600));
-  const st=ctx.__st;
-  assert.strictEqual(picker,0,'no picker'); assert.strictEqual(connects,1,'connected once without a tap'); assert(st.basic&&st.basic.soc===95,'data arrived');
-  assert(writes.every(w=>P.isAllowedBytes(Uint8Array.from(w)))); assert.match(el('log').textContent,/auto-reconnecting/);
-  assert.match(el('vConnT').textContent,/^auto-reconnect \d+\.\d s: getDevices \d+\.\d · connect .* 1st data/); n++; console.log('  ok remembered battery reconnects on load without the picker, timed');
-  // not remembered -> no connect
-  st.wantConnected=false; for(const h of timers){clearTimeout(h);clearInterval(h);}
+  return {st:ctx.__st,el,store,body,dock,writes,pickerOpts,get connects(){return connects},stop(){ ctx.__st.wantConnected=false; for(const h of timers){clearTimeout(h);clearInterval(h);} }};
+}
+async function autoReconnectTest(){
+  console.log('Fresh open (Bluefy relaunch)');
+  const snap=JSON.stringify({t:Date.now()-2*3600e3,id:'A',basic:P.parseBasic(basicP({soc:77})),cells:[3.32,3.33,3.32,3.33]});
+  // 1. getDevices still lists the battery by id -> silent connect, no picker
+  let b=await boot({store:{invictaDevId:'A',invictaDevName:'Starter Bat A'},devs:['DEV']});
+  assert.strictEqual(b.pickerOpts.length,0,'no picker'); assert.strictEqual(b.connects,1,'connected once without a tap'); assert(b.st.basic&&b.st.basic.soc===95,'live data arrived');
+  assert(b.writes.every(w=>P.isAllowedBytes(Uint8Array.from(w)))); assert.match(b.el('log').textContent,/on load: getDevices returned 1: Starter Bat A/); assert.match(b.el('log').textContent,/matched saved battery by id/);
+  assert.match(b.el('vConnT').textContent,/^auto-reconnect \d+\.\d s: getDevices \d+\.\d · connect .* 1st data/); b.stop(); n++; console.log('  ok remembered by id -> silent connect on load, timed, logged');
+  // 2. browser gave the battery a new id after relaunch -> match by saved name, still silent
+  b=await boot({store:{invictaDevId:'OLD',invictaDevName:'Starter Bat A'},devs:['DEV'],devId:'NEW'});
+  assert.strictEqual(b.pickerOpts.length,0); assert.strictEqual(b.connects,1); assert.match(b.el('log').textContent,/matched saved battery by name \(browser gave it a new id\)/);
+  assert.strictEqual(b.store.invictaDevId,'NEW','new id saved'); b.stop(); n++; console.log('  ok new id after relaunch -> matched by saved name, silent connect');
+  // 3. getDevices empty (permission not kept) -> app shell + last reading at once, one tap opens a picker narrowed to the saved name
+  b=await boot({store:{invictaDevId:'A',invictaDevName:'Starter Bat A',invictaLast:snap},devs:[]});
+  assert.strictEqual(b.connects,0,'cannot connect without a gesture'); assert.strictEqual(b.pickerOpts.length,0,'picker never opened without a tap');
+  assert(b.body.classList.contains('app'),'app shell, not grey landing'); assert(b.dock.classList.contains('quick'));
+  assert.strictEqual(b.el('vSoc').textContent,77,'cached reading shown'); assert(b.body.classList.contains('stale'),'cached reading marked stale');
+  assert.strictEqual(b.el('btnReconnect').hidden,false); assert.strictEqual(b.el('btnReconnect').textContent,'Connect to Starter Bat A'); assert.strictEqual(b.el('btnConnect').textContent,'Other');
+  assert.match(b.el('connTxt').textContent,/^Last seen 2 h ago$/); assert.match(b.el('log').textContent,/on load: getDevices returned 0 · saved Starter Bat A/); assert.match(b.el('log').textContent,/one tap needed/);
+  await b.el('btnReconnect').onclick(); await new Promise(r=>setTimeout(r,200));
+  assert.strictEqual(b.pickerOpts.length,1); assert.strictEqual(JSON.stringify(b.pickerOpts[0].filters),JSON.stringify([{name:'Starter Bat A'}]),'picker narrowed to saved name');
+  assert(b.pickerOpts[0].optionalServices.some(u=>u.includes('faa0'))); assert.strictEqual(b.connects,1); assert(b.st.basic.soc===95,'live data replaces cache');
+  assert(!b.body.classList.contains('stale')); b.stop(); n++; console.log('  ok empty getDevices -> app shell + cached reading, one tap = picker with only the saved battery');
+  // 4. generic picker stays available as fallback
+  b=await boot({store:{invictaDevId:'A',invictaDevName:'Starter Bat A'},devs:[]});
+  await b.el('btnConnect').onclick(); await new Promise(r=>setTimeout(r,200));
+  assert.strictEqual(JSON.stringify(b.pickerOpts[0].filters),JSON.stringify([{services:['0000ff00-0000-1000-8000-00805f9b34fb']},{namePrefix:'Starter'}])); assert.strictEqual(b.connects,1); b.stop();
+  n++; console.log('  ok "Other" keeps the generic picker');
+  // 5. getDevices throws -> logged, no crash; never-connected browser -> plain Connect, no app shell
+  b=await boot({store:{invictaDevId:'A',invictaDevName:'Starter Bat A'},getDevicesThrows:true});
+  assert.match(b.el('log').textContent,/on load: getDevices failed/); assert.strictEqual(b.el('btnReconnect').hidden,false); b.stop();
+  b=await boot({store:{}}); assert(!b.body.classList.contains('app')); assert.strictEqual(b.el('btnConnect').textContent,''); b.stop();
+  n++; console.log('  ok getDevices error handled; first-ever open shows the plain Connect view');
 }
 appTests().then(autoReconnectTest).then(()=>{ console.log(`\nALL ${n} TESTS PASSED`); process.exit(0); }).catch(e=>{ console.error('FAIL',e); process.exit(1); });

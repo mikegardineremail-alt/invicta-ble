@@ -138,6 +138,11 @@ main{display:grid;gap:9px;transition:opacity .3s,filter .3s}
 .btn:disabled{opacity:.4}
 /* states */
 body.disc main{opacity:.45;filter:grayscale(.9)}
+/* Remembered battery: show the app straight away (last reading, dimmed as stale) instead of the grey landing view */
+body.app.disc main{opacity:1;filter:none}
+.dock.quick .grow{display:none}
+.dock.quick #btnReconnect{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dock.quick #btnConnect{padding:0 16px}
 body.stale .num,body.stale .tMain,body.stale .ro .v,body.stale .gauge svg,body.stale .band,body.stale .soc,body.stale .status,body.stale .socTrack,body.stale #cells{opacity:.5}
 body.stale #mkHalo{animation:none;opacity:0}
 body.stale .dot.on{animation:none;background:var(--warm);box-shadow:none}
@@ -381,6 +386,12 @@ async function sendCmd(arr){
   finally{ st.writePending=false; }
 }
 
+// Last reading is cached so a fresh open can show the app immediately (marked stale until live data arrives).
+const SNAP_KEY='invictaLast', SNAP_EVERY_MS=10000; let snapAt=0;
+function saveSnapshot(force){ if(!force&&Date.now()-snapAt<SNAP_EVERY_MS) return; snapAt=Date.now();
+  try{ localStorage.setItem(SNAP_KEY,JSON.stringify({t:st.last,id:st.devId,basic:st.basic,cells:st.cells})); }catch(e){} }
+function loadSnapshot(){ try{ const o=JSON.parse(localStorage.getItem(SNAP_KEY)||'null');
+  if(o&&o.basic&&Array.isArray(o.basic.temps)&&typeof o.t==='number') return o; }catch(e){} return null; }
 function onNotify(ev){
   const dv=ev.target.value;
   const v=new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset+dv.byteLength));
@@ -388,7 +399,7 @@ function onNotify(ev){
     const kind=classifyFrame(f);
     if(kind==='bad-checksum'){ log(`checksum mismatch cmd 0x${f.cmd.toString(16)}: ${toHex(f.frame)}`); continue; }   // H2: never display
     if(kind==='bms-error'){ log(`BMS status 0x${f.status.toString(16)} for cmd 0x${f.cmd.toString(16)}`); continue; }
-    if(kind==='basic'){ const b=parseBasic(f.payload); if(!b){log('short 0x03 payload');continue;} st.basic=b; st.last=Date.now(); st.frames++; if(st.tm&&!st.tm.done){ tmMark('first data'); tmFinish(); } }
+    if(kind==='basic'){ const b=parseBasic(f.payload); if(!b){log('short 0x03 payload');continue;} st.basic=b; st.last=Date.now(); st.frames++; st.fromCache=false; saveSnapshot(); if(st.tm&&!st.tm.done){ tmMark('first data'); tmFinish(); } }
     else if(kind==='cells'){ st.cells=parseCells(f.payload); st.cellsAt=Date.now(); }
     render();
   }
@@ -523,7 +534,7 @@ function renderAlerts(b,tmax,tmin,charging,prot){
 function updAge(){
   const u=$('vUpd');
   if(!st.last){ return; }
-  const age=Date.now()-st.last, stale=age>BASIC_STALE_MS;
+  const age=Date.now()-st.last, stale=age>BASIC_STALE_MS||!!st.fromCache;
   const live=!!st.write;
   u.textContent=stale||!live?`Last seen ${ago(age)} ago`:`Updated ${ago(age)} ago`;
   u.className='chip '+(stale||!live?'warm':'cool');
@@ -531,6 +542,8 @@ function updAge(){
   $('dash').classList.toggle('stale',stale);
   if(document.body&&document.body.classList) document.body.classList.toggle('stale',stale);
   if(st.cellsAt) renderCells();
+  const bc=document.body&&document.body.classList;
+  if(!live&&!st.wantConnected&&!st.connecting&&bc&&bc.contains&&bc.contains('app')) $('connTxt').textContent=`Last seen ${ago(age)} ago`;
 }
 setInterval(updAge,1000);
 $('btnDetails').onclick=()=>{ const d=$('details'), b=$('btnDetails'); d.hidden=!d.hidden; b.setAttribute&&b.setAttribute('aria-expanded',String(!d.hidden)); };
@@ -612,17 +625,20 @@ function forceReconnect(){
   scheduleReconnect();
 }
 function onDisc(){
-  stopPolling(); st.write=null;
+  stopPolling(); st.write=null; if(st.basic) saveSnapshot(true);
   log('disconnected');
   if(st.connecting) return;            // setup() failure path will schedule the retry
   if(!st.wantConnected){ showIdleButtons(); setConn('Disconnected',''); return; }
   scheduleReconnect();
 }
+function saved(){ let id=null,name=null; try{ id=localStorage.getItem('invictaDevId'); name=localStorage.getItem('invictaDevName'); }catch(e){} return {id,name:name||null}; }
 function showIdleButtons(){
   $('btnConnect').hidden=false; $('btnDisconnect').hidden=true;
-  const canRe=!!(navigator.bluetooth&&navigator.bluetooth.getDevices&&localStorage.getItem('invictaDevId'));
-  const b=$('btnReconnect'); b.hidden=!canRe; if(canRe) b.textContent='Reconnect';   // L2
+  const sv=saved(), canRe=!!(navigator.bluetooth&&(sv.id||sv.name));
+  const b=$('btnReconnect'); b.hidden=!canRe;
+  if(canRe) b.textContent=sv.name?`Connect to ${sv.name}`:'Connect to my battery';   // L2
   const c=$('btnConnect'); c.textContent=canRe?'Other':'Connect'; c.className=canRe?'btn ghost':'btn primary';
+  const d=document.querySelector&&document.querySelector('.dock'); if(d&&d.classList) d.classList.toggle('quick',canRe);
 }
 async function connectNew(){
   let dev;
@@ -638,18 +654,44 @@ async function connectNew(){
   st.retry=0;
   try{ await setup(dev); }catch(e){ log('connect: '+e.message); scheduleReconnect(); }
 }
+const OPT_SERVICES=['0000faa0-0000-1000-8000-00805f9b34fb','0000ff00-0000-1000-8000-00805f9b34fb'];
+// Find the remembered battery among devices this browser already permits: saved id first, then saved name.
+async function findRemembered(where){
+  const sv=saved();
+  if(!navigator.bluetooth.getDevices){ log(`${where}: getDevices not available in this browser`); return null; }
+  let devs=[];
+  try{ devs=await navigator.bluetooth.getDevices(); }catch(e){ log(`${where}: getDevices failed: ${e.name||''} ${e.message}`); return null; }
+  log(`${where}: getDevices returned ${devs.length}`+(devs.length?': '+devs.map(d=>`${d.name||'(no name)'} [${String(d.id).slice(0,8)}…]`).join(', '):'')+
+      ` · saved ${sv.name||'(no name)'} [${String(sv.id||'none').slice(0,8)}…]`);
+  let d=sv.id?devs.find(x=>x.id===sv.id):null, how='id';
+  if(!d&&sv.name){ d=devs.find(x=>x.name===sv.name); how='name'; }   // L3: only the saved battery, never "any" device
+  if(d) log(`${where}: matched saved battery by ${how}`+(how==='name'?' (browser gave it a new id)':''));
+  return d||null;
+}
+// One-tap connect to the remembered battery: no picker if the browser still permits it, else a picker narrowed to its name.
 async function reconnectLast(kind){
-  try{
-    tmStart(typeof kind==='string'?kind:'reconnect');
-    const id=localStorage.getItem('invictaDevId');
-    const devs=await navigator.bluetooth.getDevices();
-    const d=devs.find(x=>x.id===id);                 // L3: saved id only
-    if(!d){ log('last battery not remembered by this browser; tap Connect'); $('btnReconnect').hidden=true; showConnectPrimary(); return false; }
-    tmMark('getDevices');
-    if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
-    st.retry=0;
-    await setup(d); return true;
-  }catch(e){ log('reconnect: '+e.message); scheduleReconnect(); return true; }
+  const sv=saved();
+  tmStart(typeof kind==='string'?kind:'reconnect');
+  if(st.dev&&sv.id&&st.dev.id===sv.id) return connectTo(st.dev,'same session');        // e.g. after Disconnect: no picker
+  if(st.savedDev){ const d=st.savedDev; st.savedDev=null; return connectTo(d,'remembered'); }
+  if(sv.name&&navigator.bluetooth.requestDevice){
+    let dev;
+    try{
+      // requestDevice must be the first await so the tap still counts as a user gesture.
+      dev=await navigator.bluetooth.requestDevice({filters:[{name:sv.name}],optionalServices:OPT_SERVICES});
+    }catch(e){ log(`picker (${sv.name}): ${e.name||''} ${e.message||''}. Use Other to pick from all batteries`); setConn('Disconnected',''); return false; }
+    tmMark('picker');
+    return connectTo(dev,'picker');
+  }
+  const d=await findRemembered('reconnect');
+  if(!d){ log('last battery not remembered by this browser; tap Connect'); $('btnReconnect').hidden=true; showConnectPrimary(); return false; }
+  tmMark('getDevices');
+  return connectTo(d,'remembered');
+}
+async function connectTo(d,how){
+  if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
+  st.retry=0;
+  try{ await setup(d); return true; }catch(e){ log('reconnect: '+e.message); scheduleReconnect(); return true; }
 }
 function showConnectPrimary(){ const c=$('btnConnect'); c.textContent='Connect'; c.className='btn primary'; }
 $('btnConnect').onclick=connectNew;
@@ -668,14 +710,23 @@ document.addEventListener('visibilitychange',()=>{
 });
 (async()=>{
   if(!navigator.bluetooth){ $('unsupported').hidden=false; $('btnConnect').disabled=true; return; }
-  // Silent reconnect on load: a battery this browser already permits can be connected without the picker
-  // (Bluefy supports getDevices since 3.2.0; iOS can connect a known peripheral directly, no scan needed).
-  if(navigator.bluetooth.getDevices&&localStorage.getItem('invictaDevId')){
-    try{ const devs=await navigator.bluetooth.getDevices(); const id=localStorage.getItem('invictaDevId');
-      const d=devs.find(x=>x.id===id);
-      if(d){ const b=$('btnReconnect'); b.hidden=false; b.textContent='Reconnect'; const c=$('btnConnect'); c.textContent='Other'; c.className='btn ghost';
-        if(!st.wantConnected&&!st.connecting){ log('auto-reconnecting to last battery'); await reconnectLast('auto-reconnect'); } }
-    }catch(e){ log('getDevices: '+e.message); }
+  // Fresh open. Remembered battery -> show the app shell + last reading straight away, then try a silent connect.
+  // Bluefy supports getDevices (3.2.0+); whether it still lists the battery after an app relaunch is logged below.
+  const sv=saved();
+  if(sv.id||sv.name){
+    document.body&&document.body.classList&&document.body.classList.add('app');
+    const snap=loadSnapshot();
+    if(snap&&(!snap.id||!sv.id||snap.id===sv.id)){
+      st.basic=snap.basic; st.cells=Array.isArray(snap.cells)?snap.cells:[]; st.last=snap.t; st.cellsAt=st.cells.length?snap.t:0; st.devId=sv.id; st.fromCache=true;
+      render(); log(`showing last reading from ${ago(Date.now()-snap.t)} ago`);
+    }
+    showIdleButtons(); setConn(st.last?`Last seen ${ago(Date.now()-st.last)} ago`:'Not connected','');
+    tmStart('auto-reconnect');
+    const d=await findRemembered('on load');
+    if(d) st.savedDev=d;            // if the silent attempt fails, the big button reuses it (no picker)
+    if(d&&!st.wantConnected&&!st.connecting){
+      log('auto-reconnecting to last battery'); tmMark('getDevices'); await connectTo(d,'auto');
+    } else if(!d){ log(`on load: one tap needed. "Connect to ${sv.name||'my battery'}" opens a picker showing only that battery`); }
   }
 })();
 </script>
