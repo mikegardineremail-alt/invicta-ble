@@ -695,7 +695,7 @@ async function connectTo(d,how){
 }
 function showConnectPrimary(){ const c=$('btnConnect'); c.textContent='Connect'; c.className='btn primary'; }
 $('btnConnect').onclick=connectNew;
-$('btnReconnect').onclick=()=>reconnectLast('reconnect');
+$('btnReconnect').onclick=()=>{ const sv=saved(); if(st.dev&&sv.id&&st.dev.id===sv.id) return reconnectLast('reconnect'); return connectNew(); };  // fresh open: same picker path as Other (works in Bluefy)
 $('btnDisconnect').onclick=()=>{
   st.wantConnected=false; stopPolling();
   if(st.reTimer){clearTimeout(st.reTimer);st.reTimer=null;}
