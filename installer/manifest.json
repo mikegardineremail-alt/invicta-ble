@@ -1,0 +1,12 @@
+{
+  "name": "Invicta Bridge",
+  "version": "1.0.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "improv": true,
+      "parts": [{ "path": "invicta-bridge.factory.bin", "offset": 0 }]
+    }
+  ]
+}
