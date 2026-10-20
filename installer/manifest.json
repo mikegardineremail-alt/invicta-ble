@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "d8850b172b8e2d66e82df92bcb8b6d10",
-        "summary": "1.2.5: Bluetooth only after WiFi has an IP; DHCP watchdog tries the next access point; no password in logs",
+        "md5": "ce1b81aaac5d7c6299fad2dbed2ef48c",
+        "summary": "1.2.6: fixes no IP on Google Nest Wifi (DHCP offered-address ARP check off); clearer DHCP log",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
