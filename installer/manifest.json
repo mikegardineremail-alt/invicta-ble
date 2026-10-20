@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "2538910297ca4d4efc5bc3e311d64820",
-        "summary": "1.2.3: clears a Victron device wrongly saved as a battery board; removes the 1.2.2 custom WiFi country setting",
+        "md5": "bc2ad1ceb38a3ac3e67b969b90bcb477",
+        "summary": "1.2.4: WiFi back to plain ESPHome defaults, verbose WiFi logging; Bluetooth off until WiFi connects",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
