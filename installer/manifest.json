@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "bc2ad1ceb38a3ac3e67b969b90bcb477",
-        "summary": "1.2.4: WiFi back to plain ESPHome defaults, verbose WiFi logging; Bluetooth off until WiFi connects",
+        "md5": "d8850b172b8e2d66e82df92bcb8b6d10",
+        "summary": "1.2.5: Bluetooth only after WiFi has an IP; DHCP watchdog tries the next access point; no password in logs",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
