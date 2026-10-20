@@ -1,12 +1,18 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "improv": true,
-      "parts": [{ "path": "invicta-bridge.factory.bin", "offset": 0 }]
+      "parts": [{ "path": "invicta-bridge.factory.bin", "offset": 0 }],
+      "ota": {
+        "path": "invicta-bridge.ota.bin",
+        "md5": "21a1ac6c7cabee19c4e34c03efb46b42",
+        "summary": "1.2.2: Victron devices excluded from battery discovery; WiFi setup fixes (Bluetooth off until WiFi, AU channels 1-13); self-update",
+        "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
+      }
     }
   ]
 }
