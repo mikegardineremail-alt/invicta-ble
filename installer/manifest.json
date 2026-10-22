@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "42ceda43bd73becff0f28503803b3ee4",
-        "summary": "1.3.0: BatteryProtect output ON/OFF from the bridge web page (PIN stored in flash; GATT control); firmware version shows bridge 1.3.0",
+        "md5": "8bba98b94fd7591ec2ef6cf50442c3e8",
+        "summary": "1.3.1: fix \u2014 password fields no longer wipe Victron encryption keys in flash; keep BatteryProtect ON/OFF control",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
