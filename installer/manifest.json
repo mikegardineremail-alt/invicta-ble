@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "ce1b81aaac5d7c6299fad2dbed2ef48c",
-        "summary": "1.2.6: fixes no IP on Google Nest Wifi (DHCP offered-address ARP check off); clearer DHCP log",
+        "md5": "f979b768fa855d7d5c640b420ffea2b6",
+        "summary": "Fix: Bluetooth scan now verified to restart after a WiFi drop, plus watchdogs; stale Victron values shown as STALE",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
