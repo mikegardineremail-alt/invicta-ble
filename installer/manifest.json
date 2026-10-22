@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "ef50be4fcfc7ac37f9e1d625c07c3911",
-        "summary": "1.3.3: fixes BatteryProtect ON/OFF stopping straight after pairing (false \"init timeout\"); saved keys kept",
+        "md5": "5689ad6abfdf19524e5af6f3242af762",
+        "summary": "1.3.4: BatteryProtect ON/OFF retries and reports what the device says; extra logging; saved keys kept",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
