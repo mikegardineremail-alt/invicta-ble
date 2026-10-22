@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.2.7",
+  "version": "1.3.0",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "f979b768fa855d7d5c640b420ffea2b6",
-        "summary": "Fix: Bluetooth scan now verified to restart after a WiFi drop, plus watchdogs; stale Victron values shown as STALE",
+        "md5": "42ceda43bd73becff0f28503803b3ee4",
+        "summary": "1.3.0: BatteryProtect output ON/OFF from the bridge web page (PIN stored in flash; GATT control); firmware version shows bridge 1.3.0",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
