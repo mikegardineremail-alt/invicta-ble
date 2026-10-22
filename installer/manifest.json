@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "5689ad6abfdf19524e5af6f3242af762",
-        "summary": "1.3.4: BatteryProtect ON/OFF retries and reports what the device says; extra logging; saved keys kept",
+        "md5": "b708abf95ad0360e56305b1ea6825c3c",
+        "summary": "1.3.5: optional cloud command relay for BatteryProtect ON/OFF (polls an Apps Script URL every 30 s); saved keys kept",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
