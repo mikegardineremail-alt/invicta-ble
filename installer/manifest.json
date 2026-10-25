@@ -1,6 +1,6 @@
 {
   "name": "Invicta Bridge",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -14,8 +14,8 @@
       ],
       "ota": {
         "path": "invicta-bridge.ota.bin",
-        "md5": "5a3add6e23372839abb9f2d00151a3f4",
-        "summary": "1.3.6: up to 3 saved WiFi networks (WiFi 1-3 name/password/clear); current network kept as WiFi 1; saved keys kept",
+        "md5": "7bffe47a99a026cec6c4a4fad0d81c1e",
+        "summary": "1.3.7: Quiet fan (web buttons + sheet bp_poll quiet/quiet_cancel); BTHome 0x3D quiet minutes, 1s adv while quiet; saved keys kept",
         "release_url": "https://mikegardineremail-alt.github.io/invicta-ble/installer/"
       }
     }
